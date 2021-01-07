@@ -13,6 +13,12 @@ local keywords = {
     ["type"] = T.Type,
     ["export"] = T.Export,
     ["return"] = T.Return,
+    ["if"] = T.If,
+    ["else"] = T.Else,
+    ["do"] = T.Do,
+    ["while"] = T.While,
+    ["loop"] = T.Loop,
+    ["break"] = T.Break,
     ["true"] = T.True,
     ["false"] = T.False,
     ["nil"] = T.Nil
@@ -24,6 +30,19 @@ local symbols = {
     ["{"] = T.LBrace, ["}"] = T.RBrace,
     ["("] = T.LPar, [")"] = T.RPar,
     ["["] = T.LSQB, ["]"] = T.RSQB,
+}
+
+local escapes = {
+    ["\\"] = "\\",
+    ['"'] = '"',
+    ["'"] = "'",
+    ["a"] = "\a",
+    ["b"] = "\b",
+    ["f"] = "\f",
+    ["n"] = "\n",
+    ["r"] = "\r",
+    ["t"] = "\t",
+    ["v"] = "\v",
 }
 
 local oper = enum(chrtbl("+-*/%<=>#.:^?!$@|&~"))
@@ -38,6 +57,9 @@ local name_start = enum(chrtbl(name_start_str))
 local typename = enum(chrtbl(typename_str))
 local name = enum(chrtbl(name_str))
 
+local digit = enum(chrtbl("0123456789."))
+local digit_nodot = enum(chrtbl("0123456789"))
+local digit_hex = enum(chrtbl("0123456789abcdefABCDEF"))
 local function get_next(source, pos, line, column)
     if not pos then
         pos = 1
@@ -59,6 +81,82 @@ local function get_next(source, pos, line, column)
     end
     if pos > len then
         return token({ type=T.EOF, pos=pos, len=0, line=line, column=column })
+    end
+
+    local function lex_rep(enum, ttype, key, action, pre)
+        if enum[c] then
+            local start = pos
+            local startl = line
+            local startc = column
+
+            repeat
+                pos = pos + 1
+                column = column + 1
+                c = source:sub(pos, pos)
+            until not enum[c]
+
+            local str = source:sub(start, pos - 1)
+            if action then str = action(pre and pre..str or str) end
+            if not ttype then return str, pos - start, startl, startc end
+            return token({
+                type = ttype, [key] = str,
+                pos = start, len = pos - start,
+                line = startl, column = startc
+            }), pos, line, column
+        end
+        return
+    end
+
+    if c == "'" or c == '"' then
+        local start = pos
+        local startcol = column
+        local startchar = c
+        local data = ""
+
+        local escape = false
+        repeat
+            pos = pos + 1
+            column = column + 1
+            c = source:sub(pos, pos)
+            if pos > len then
+                error("Unfinished string") -- TODO: error
+            end
+
+            if escape then
+                if escapes[c] then
+                    data = data .. escapes[c]
+                elseif digit_nodot[c] then
+                    local n = lex_rep(digit_nodot, nil, nil, tonumber)
+                    if n > 255 then
+                        error("Invalid escape") -- TODO: error
+                    end
+                    data = data .. string.char(n)
+                    pos = pos - 1
+                elseif c == 'x' then
+                    local s = source:sub(pos+1, pos+2)
+                    if #s ~= 2 then
+                        error("Unfinished string") -- TODO: error
+                    end
+                    local n = tonumber("0x"..s)
+                    if not n or n > 255 then
+                        error("Invalid escape") -- TODO: error
+                    end
+                    data = data .. string.char(n)
+                    pos = pos + 2
+                else
+                    error("Invalid escape") -- TODO: error
+                end
+                escape = false
+            elseif c == "\\" then
+                escape = true
+            elseif c == startchar then
+                break -- returns outside of loop
+            else
+                data = data .. c
+            end
+        until false
+
+        return token({ type=T.String, data=data, pos=start, len=pos-start, line=line, column=startcol }), pos+1, line, column+1
     end
 
     local t = symbols[c]
@@ -97,29 +195,6 @@ local function get_next(source, pos, line, column)
         }), pos, line, column
     end
 
-    local function lex_rep(enum, ttype, key, action, pre)
-        if enum[c] then
-            local start = pos
-            local startl = line
-            local startc = column
-
-            repeat
-                pos = pos + 1
-                column = column + 1
-                c = source:sub(pos, pos)
-            until not enum[c]
-
-            local str = source:sub(start, pos - 1)
-            if action then str = action(pre and pre..str or str) end
-            return token({
-                type = ttype, [key] = str,
-                pos = start, len = pos - start,
-                line = startl, column = startc
-            }), pos, line, column
-        end
-        return
-    end
-
     local ret = { lex_rep(oper, T.Oper, "oper") }
     if ret[1] then
         if ret[1].oper == "." then
@@ -129,7 +204,6 @@ local function get_next(source, pos, line, column)
         end
     end
 
-    local digit = enum(chrtbl("0123456789."))
     if c == '0' then
         pos = pos + 1
         column = column + 1
@@ -138,7 +212,7 @@ local function get_next(source, pos, line, column)
             pos = pos + 1
             column = column + 1
             c = source:sub(pos, pos)
-            ret = { lex_rep(enum(chrtbl("0123456789abcdefABCDEF")), T.Number, "num", tonumber, "0x") }
+            ret = { lex_rep(digit_hex, T.Number, "num", tonumber, "0x") }
             if ret[1] then
                 return unpack(ret)
             else

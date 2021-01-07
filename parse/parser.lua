@@ -94,7 +94,7 @@ function new_parser(source)
     self:def_pre(T.False, identity)
     self:def_pre(T.Number, identity)
     self:def_pre(T.Name, identity)
-    -- TODO: ...
+    self:def_pre(T.String, identity)
 
     self:def_pre("-", prefix)
     self:def_pre("#", prefix)
@@ -219,14 +219,18 @@ function new_parser(source)
         return expr({ ET.Block, stmts=stmts })
     end)
 
+    self:def_stmt(T.Do, function(parser, token)
+        return parser:stmt(true)
+    end)
+
     return self
 end
 
-function parser:stmt()
+function parser:stmt(allow_block)
     local token = self.lexer.get(1)
     local func = self.stmts[token.type]
     local stmt
-    if func then
+    if func and (allow_block or token.type ~= T.LBrace) then
         self.lexer.adv()
         stmt = func(self, token)
     else

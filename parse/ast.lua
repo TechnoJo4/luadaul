@@ -7,6 +7,8 @@ local token_meta = {
         local s = " "
         if self.type == T.Oper then
             s = self.oper
+        elseif self.type == T.String then
+            s = self.data
         elseif self.type == T.Number then
             s = tostring(self.num)
         elseif self.type == T.Name then

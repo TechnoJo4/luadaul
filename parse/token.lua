@@ -2,6 +2,7 @@
 return require("parse.utils").enum({
     "Oper",
     "Number",
+    "String",
     "Name",
     "Backslash",
     "Comma",
@@ -21,6 +22,7 @@ return require("parse.utils").enum({
     "Nil",
     "True",
     "False",
+    "If", "Else", "Do", "While", "Loop", "Break",
     "Error",
     "EOF"
 }, true)

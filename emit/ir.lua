@@ -175,6 +175,10 @@ irc[T.Number] = function(self, v)
     return { IR.CONST, self:constant(v.num) }
 end
 
+irc[T.String] = function(self, v)
+    return { IR.CONST, self:constant(v.data) }
+end
+
 irc[T.Nil] = function(self)
     return { IR.NIL }
 end
