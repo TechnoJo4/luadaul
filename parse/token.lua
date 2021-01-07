@@ -1,0 +1,26 @@
+-- types of tokens
+return require("parse.utils").enum({
+    "Oper",
+    "Number",
+    "Name",
+    "Backslash",
+    "Comma",
+    "Dot",
+    "Semi",
+    "LBrace",
+    "RBrace",
+    "LPar",
+    "RPar",
+    "LSQB",
+    "RSQB",
+    "Return",
+    "Export",
+    "Let",
+    "Type",
+    "Of",
+    "Nil",
+    "True",
+    "False",
+    "Error",
+    "EOF"
+}, true)
