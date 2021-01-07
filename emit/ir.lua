@@ -26,9 +26,9 @@ local IR = enum({
     "EQ", "NEQ",
     "LT", "LTEQ",
     "GT", "GTEQ",
-    "POP",
     "CALL", "NAMECALL",
-    "RETURN"
+    "RETURN", "POP",
+    "LOOP", "IF", "BREAK"
 }, true)
 
 local inst_meta = { __tostring=function(self)
@@ -158,8 +158,8 @@ irc[ET.Block] = function(self, stmt)
     self:end_scope()
 end
 
-irc[ET.Declare] = function(self, expr)
-    self:emit({ IR.SETLOCAL, self:declare(expr.name.name), self:expr(expr.value) })
+irc[ET.Declare] = function(self, stmt)
+    self:emit({ IR.SETLOCAL, self:declare(stmt.name.name), self:expr(stmt.value) })
 end
 
 irc[T.Name] = function(self, tok)
@@ -204,7 +204,6 @@ irc["*"] = binop(IR.MUL)
 irc["/"] = binop(IR.DIV)
 irc["%"] = binop(IR.MOD)
 irc["^"] = binop(IR.POW)
-irc[".."] = binop(IR.CONCAT)
 irc["#"] = unop(IR.LEN)
 irc["!"] = unop(IR.NOT)
 
@@ -217,6 +216,17 @@ irc["-"] = function(self, expr)
         end
         return { IR.UNM, self:expr(expr[2]) }
     end
+end
+
+irc[".."] = function(self, expr)
+    local ir = { IR.CONCAT, self:expr(expr[2]) }
+    local rhs = self:expr(expr[3])
+    if rhs[1] == IR.CONCAT then
+        for i=2,#rhs do
+            ir[i+1] = rhs[i]
+        end
+    end
+    return ir
 end
 
 irc[ET.Call] = function(self, expr)

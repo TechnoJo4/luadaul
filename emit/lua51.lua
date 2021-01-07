@@ -192,6 +192,7 @@ end
 
 function compiler:reg(n)
     if n then
+        print("allocn",n)
         self.regs[n] = true
         if self.maxstack <= n then
             self.maxstack = n+1
@@ -204,10 +205,21 @@ function compiler:reg(n)
             if self.maxstack <= i then
                 self.maxstack = i+1
             end
+            print("alloc",i)
             return i
         end
     end
     error("Could not allocate register")
+end
+
+function compiler:RK(ir)
+    if type(ir) == "number" then
+        return "", bit.bor(256, ir)
+    elseif ir[1] == IR.CONST then
+        return "", bit.bor(256, ir[2])
+    else
+        return self:compile(ir)
+    end
 end
 
 local function same(a, b)
@@ -216,17 +228,16 @@ local function same(a, b)
 
     if t == IR.CONST then
         return a[2] == b[2]
+    elseif t == IR.GETLOCAL then
+        return a[2] == b[2]
     end
 
     return false
 end
 
-local function binop(inst, swap)
+local function binop(inst)
     return function(self, v, r)
         local lhs, rhs = v[2], v[3]
-        if swap then
-            lhs, rhs = rhs, lhs
-        end
 
         local b, rb
         local a, ra = self:compile(lhs, r)
@@ -263,7 +274,33 @@ compiler[IR.MUL] = binop(o.MUL)
 compiler[IR.DIV] = binop(o.DIV)
 compiler[IR.MOD] = binop(o.MOD)
 compiler[IR.POW] = binop(o.POW)
-compiler[IR.CONCAT] = binop(o.CONCAT)
+compiler[IR.CONCAT] = function(self, v, r)
+    local lhs, rhs = v[2], v[3]
+    local move = false
+    if r then
+        for i=2,#v do
+            if self.regs[r+i-2] then
+                move = r
+                r = self:reg()
+            end
+        end
+    end
+
+    local bc = {}
+    local b = r
+    local c = r
+    for i=2,#v do
+        local code, reg = self:compile(v[i], self:reg(r + i - 2))
+        bc[i-1] = code
+        c = reg
+    end
+
+    local s, r = table.concat(bc, "")..o.CONCAT(move or r, b, c)
+    for i=move and b+1 or b,c do
+        self.regs[i] = false
+    end
+    return s, r
+end
 
 compiler[IR.UNM] = unop(o.UNM)
 compiler[IR.NOT] = unop(o.NOT)
@@ -314,16 +351,6 @@ compiler[IR.SETLOCAL] = function(self, v, r)
     else
         local code, a = self:compile(v[3], r)
         return code..o.MOVE(v[2], r), r
-    end
-end
-
-function compiler:RK(ir)
-    if type(ir) == "number" then
-        return "", bit.bor(256, ir)
-    elseif ir[1] == IR.CONST then
-        return "", bit.bor(256, ir[2])
-    else
-        return self:compile(ir)
     end
 end
 

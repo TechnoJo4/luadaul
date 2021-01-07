@@ -51,12 +51,12 @@ local ET_tostring = {
     [ET.Call] = function(expr, lvl)
         local args = {}
         for k,v in pairs(expr.args) do
-            args[k] = (" "):rep(lvl) .. tostr(v, lvl+1)
+            args[k] = (" "):rep(lvl) .. tostr(v, lvl)
         end
 
         return {
             "Call",
-            "target="..tostr(expr.target, lvl+1),
+            "target="..tostr(expr.target, lvl),
             "args={\n"..table.concat(args, ",\n").."\n"..(" "):rep(lvl-1).."}"
         }
     end,
@@ -68,8 +68,8 @@ local ET_tostring = {
 
         return {
             "Namecall ("..tostring(expr[2])..")",
-            "from="..tostr(expr.from, lvl+1),
-            "target="..tostr(expr.target, lvl+1),
+            "from="..tostr(expr.from, lvl),
+            "target="..tostr(expr.target, lvl),
             "args={\n"..table.concat(args, ",\n").."\n"..(" "):rep(lvl-1).."}"
         }
     end,
@@ -104,7 +104,7 @@ local ET_tostring = {
 }
 
 expr_tostring = function(expr, lvl)
-    if not lvl then lvl = 1 end
+    if not lvl then lvl = 0 end
     local t
     if ET[expr[1]] then
         t = ET_tostring[expr[1]](expr, lvl+1)

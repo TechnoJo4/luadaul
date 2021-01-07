@@ -219,6 +219,12 @@ function new_parser(source)
         return expr({ ET.Block, stmts=stmts })
     end)
 
+    self:def_stmt(T.Return, function(parser, token)
+        local e = parser:expr()
+        consume(parser.lexer, T.Semi)
+        return expr({ ET.Return, e })
+    end)
+
     self:def_stmt(T.Do, function(parser, token)
         return parser:stmt(true)
     end)
