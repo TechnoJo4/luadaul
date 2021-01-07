@@ -114,16 +114,17 @@ local opcodes = {
 local ABx_ops = { ["LOADK"]=true, ["GETGLOBAL"]=true, ["SETGLOBAL"]=true, ["CLOSURE"]=true }
 local AsBx_ops = { ["JMP"]=true, ["FORLOOP"]=true, ["FORPREP"]=true }
 
+local DEBUG_INSTS = true
 local o = {}
 for k,v in pairs(opcodes) do
+    local f = iABC
     if ABx_ops[v] or AsBx_ops[v] then
-        o[v] = function(...)
-            return inst_s(iABx(k, ...))
-        end
-    else
-        o[v] = function(...)
-            return inst_s(iABC(k, ...))
-        end
+        f = iABx
+    end
+    local padded = v..(" "):rep(10-#v)
+    o[v] = function(...)
+        if DEBUG_INSTS then print(padded, ...) end
+        return inst_s(f(k, ...))
     end
 end
 
@@ -192,7 +193,6 @@ end
 
 function compiler:reg(n)
     if n then
-        print("allocn",n)
         self.regs[n] = true
         if self.maxstack <= n then
             self.maxstack = n+1
@@ -205,7 +205,6 @@ function compiler:reg(n)
             if self.maxstack <= i then
                 self.maxstack = i+1
             end
-            print("alloc",i)
             return i
         end
     end
@@ -364,15 +363,43 @@ end
 compiler[IR.CALL] = function(self, v, a)
     a = a or self:reg()
     local target, a = self:compile(v[2], a)
-    local b = 1
+    local b, nargs = 1, 0
     local bc = { target }
     if #v > 3 then
         for i=4,#v do
-            local j = i-3
+            local j = i - 3
             local code, r = self:compile(v[i], self:reg(a + j))
-            bc[j+1] = code
+            bc[j + 1] = code
+            b = j + 1
+            nargs = nargs + 1
+        end
+    end
+    local nrets = v[3]
+    local max = math.max(nargs+1, nrets)
+    for i=0,max-1 do
+        self.regs[a+i] = i < nrets
+    end
+    return table.concat(bc, "")..o.CALL(a, b, v[3]+1), a
+end
+
+compiler[IR.NAMECALL] = function(self, v, a)
+    a = a or self:reg()
+    local from = self:compile(v[2], a + 1)
+    local target = o.GETTABLE(a, a + 1, bit.bor(256, v[3]))
+    local b, nargs = 2, 1
+    local bc = { from, target }
+    if #v > 4 then
+        for i=5,#v do
+            local j = i - 3
+            local code, r = self:compile(v[i], self:reg(a + j))
+            bc[j + 1] = code
             b = j + 1
         end
+    end
+    local nrets = v[4]
+    local max = math.max(nargs+1, nrets)
+    for i=0,max-1 do
+        self.regs[a+i] = i < nrets
     end
     return table.concat(bc, "")..o.CALL(a, b, v[3]+1), a
 end

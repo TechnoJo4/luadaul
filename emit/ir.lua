@@ -143,6 +143,7 @@ end
 irc[ET.Expression] = function(self, stmt)
     local v = self:expr(stmt[2])
     if v[1] == IR.CALL then v[3] = 0 end
+    if v[1] == IR.NAMECALL then v[4] = 0 end
     self:emit({ IR.POP, v })
 end
 
@@ -234,6 +235,15 @@ irc[ET.Call] = function(self, expr)
     local ir = { IR.CALL, self:expr(expr.target), 1 }
     for i,v in pairs(expr.args) do
         ir[i+3] = self:expr(v)
+    end
+    return ir
+end
+
+irc[ET.Namecall] = function(self, expr)
+    -- TODO: ir[4] should be nreturns
+    local ir = { IR.NAMECALL, self:expr(expr.from), self:constant(expr.target.name), 1 }
+    for i,v in pairs(expr.args) do
+        ir[i+4] = self:expr(v)
     end
     return ir
 end
