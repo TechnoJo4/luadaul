@@ -100,7 +100,7 @@ local ET_tostring = {
     [ET.Block] = function(expr, lvl)
         local stmts = { "Block" }
         for k,v in pairs(expr.stmts) do
-            stmts[k+1] = (" "):rep(lvl) .. tostr(v, lvl)
+            stmts[k+1] = (" "):rep(k > 1 and lvl or 0) .. tostr(v, lvl)
         end
 
         return stmts
@@ -113,13 +113,26 @@ local ET_tostring = {
             expr.false_branch and "false="..tostr(expr.false_branch, lvl)
         }
     end,
+    [ET.While] = function(expr, lvl)
+        return {
+            "While",
+            "cond="..tostr(expr.cond, lvl),
+            tostr(expr.branch, lvl)
+        }
+    end,
+    [ET.Loop] = function(expr, lvl)
+        return { "Loop", tostr(expr[2], lvl) }
+    end,
+    [ET.Break] = function(expr, lvl)
+        return { "Break" }
+    end,
 }
 
 expr_tostring = function(expr, lvl)
     if not lvl then lvl = 0 end
     local t
     if ET[expr[1]] then
-        t = ET_tostring[expr[1]](expr, lvl+1)
+        t = ET_tostring[expr[1]](expr, lvl)
     else
         t = {}
         for i,v in pairs(expr) do

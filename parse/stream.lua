@@ -14,8 +14,8 @@ return function(func, arg)
             last = { func(unpack(last)) }
             stream[i] = last[1]
         end,
-        advance = function()
-            self.pos = self.pos + 1
+        advance = function(amount)
+            self.pos = self.pos + (amount or 1)
             while not stream[self.pos] do
                 self.generate()
             end

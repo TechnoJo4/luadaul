@@ -11,11 +11,12 @@ local enum = utils.enum
 --[[
     Notes:
     (*) "POP" actually means "forget"/deallocate.
-        conversely, "PUSH" means allocate.
+        conversely, "PUSH"ing is actually allocating.
+        The stack behaves like registers, but the
+        allocation behaves like a stack anyways so this isn't actually crucial.
 ]]
 local IR = enum({
-    "NIL", "TRUE", "FALSE",
-    "CONST",
+    "NIL", "TRUE", "FALSE", "CONST",
     "GETTABLE", "SETTABLE",
     "GETLOCAL", "SETLOCAL",
     "GETUPVAL", "SETUPVAL",
@@ -24,6 +25,7 @@ local IR = enum({
     "MUL", "DIV", "MOD",
     "POW", "CONCAT",
     "UNM", "NOT", "LEN",
+    "OR", "AND",
     "EQ", "NEQ",
     "LT", "LTEQ",
     "GT", "GTEQ",
@@ -132,7 +134,7 @@ end
 function irc:stmt(stmt, ret)
     local func = self[stmt[1]]
     if not func then
-        error(("No IR compile rule for %s"):format(stmt[1].type)) -- TODO: error
+        error(("No IR compile rule for %s"):format(stmt[1])) -- TODO: error
     end
     if ret then
         local t = {}
@@ -172,6 +174,10 @@ irc[ET.Return] = function(self, stmt)
     self:emit({ IR.RETURN, self:expr(stmt[2]) })
 end
 
+irc[ET.Break] = function(self, stmt)
+    self:emit({ IR.BREAK })
+end
+
 irc[ET.Block] = function(self, stmt)
     self:start_scope()
     for _,v in ipairs(stmt.stmts) do
@@ -193,6 +199,19 @@ irc[ET.If] = function(self, stmt)
         self:stmt(stmt.true_branch, true),
         stmt.false_branch and self:stmt(stmt.false_branch, true)
     })
+end
+
+irc[ET.Loop] = function(self, stmt)
+    self:emit({ IR.LOOP, self:stmt(stmt[2], true) })
+end
+
+irc[ET.While] = function(self, stmt)
+    local branch = self:stmt(stmt.branch, true)
+    for i=#branch,1,-1 do
+        branch[i+1] = branch[i]
+    end
+    branch[1] = inst({ IR.IF, inst({ IR.NOT, self:expr(stmt.cond) }), { inst({ IR.BREAK }) } })
+    self:emit({ IR.LOOP, branch })
 end
 
 irc[T.Name] = function(self, tok)
@@ -239,6 +258,15 @@ irc["%"] = binop(IR.MOD)
 irc["^"] = binop(IR.POW)
 irc["#"] = unop(IR.LEN)
 irc["!"] = unop(IR.NOT)
+
+irc["||"] = binop(IR.OR)
+irc["&&"] = binop(IR.AND)
+irc["=="] = binop(IR.EQ)
+irc["!="] = binop(IR.NEQ)
+irc["<"]  = binop(IR.LT)
+irc["<="] = binop(IR.LTEQ)
+irc[">"]  = binop(IR.GT)
+irc[">="] = binop(IR.GTEQ)
 
 irc["-"] = function(self, expr)
     if expr[3] then

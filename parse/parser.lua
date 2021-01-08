@@ -48,6 +48,11 @@ end
 
 local function consume(lexer, ttype)
     local token = lexer.adv()
+    if ttype ~= T.Newline then
+        while token.type == T.Newline do
+            token = lexer.adv()
+        end
+    end
     if token.type ~= ttype then
         print(token)
         error("error (consume)") -- TODO: error
@@ -57,10 +62,25 @@ end
 
 local function match(lexer, ttype)
     local token = lexer.get(1)
+    if ttype ~= T.Newline then
+        while token.type == T.Newline do
+            lexer.adv()
+            token = lexer.get(1)
+        end
+    end
     if token.type == ttype then
         return lexer.adv()
     end
     return false
+end
+
+local function consume_end(lexer)
+    local token = lexer.adv()
+    if token.type ~= T.Newline and token.type ~= T.Semi then
+        print(token)
+        error("error (consume_end)") -- TODO: error
+    end
+    return token
 end
 
 local function consume_oper(lexer, oper)
@@ -205,7 +225,7 @@ function new_parser(source)
         local name = consume(parser.lexer, T.Name)
         consume_oper(parser.lexer, "=")
         local value = parser:expr()
-        consume(parser.lexer, T.Semi)
+        consume_end(parser.lexer)
         return expr({ ET.Declare, name=name, value=value })
     end)
 
@@ -221,11 +241,12 @@ function new_parser(source)
 
     self:def_stmt(T.Return, function(parser, token)
         local e = parser:expr()
-        consume(parser.lexer, T.Semi)
+        consume_end(parser.lexer)
         return expr({ ET.Return, e })
     end)
 
     self:def_stmt(T.Do, function(parser, token)
+        -- TODO: parse do {} while (cond) loops
         return parser:stmt(true)
     end)
 
@@ -241,11 +262,32 @@ function new_parser(source)
         return s
     end)
 
+    self:def_stmt(T.While, function(parser, token)
+        local s = expr({ ET.While })
+        consume(parser.lexer, T.LPar)
+        s.cond = parser:expr()
+        consume(parser.lexer, T.RPar)
+        s.branch = parser:stmt(true)
+        return s
+    end)
+
+    self:def_stmt(T.Loop, function(parser, token)
+        return expr({ ET.Loop, parser:stmt(true) })
+    end)
+
+    self:def_stmt(T.Break, function(parser, token)
+        return expr({ ET.Break })
+    end)
+
     return self
 end
 
 function parser:stmt(allow_block)
     local token = self.lexer.get(1)
+    while token.type == T.Newline do
+        self.lexer.adv()
+        token = self.lexer.get(1)
+    end
     local func = self.stmts[token.type]
     local stmt
     if func and (allow_block or token.type ~= T.LBrace) then
@@ -253,7 +295,7 @@ function parser:stmt(allow_block)
         stmt = func(self, token)
     else
         stmt = expr({ ET.Expression, self:expr() })
-        consume(self.lexer, T.Semi)
+        consume_end(self.lexer)
     end
     return stmt
 end
@@ -262,6 +304,9 @@ function parser:expr(prec)
     if not prec then prec = 0 end
 
     local token = self.lexer.adv()
+    while token.type == T.Newline do
+        token = self.lexer.adv()
+    end
     local idx = token.type
     if token.type == T.Oper then
         idx = token.oper
@@ -273,7 +318,12 @@ function parser:expr(prec)
 
     local left = func(self, token, prec)
     repeat
-        token = self.lexer.get(1)
+        local i = 1
+        token = self.lexer.get(i)
+        while token.type == T.Newline do
+            i = i + 1
+            token = self.lexer.get(i)
+        end
         if token.type == T.EOF then
             break
         end
@@ -287,7 +337,7 @@ function parser:expr(prec)
         local rule = self.post[idx]
         if not rule or rule.prec <= prec then break end
 
-        self.lexer.adv()
+        self.lexer.adv(i)
         left = rule.func(self, token, left, rule.prec)
     until false
 

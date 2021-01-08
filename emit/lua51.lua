@@ -32,6 +32,7 @@ local size_Bx = size_C + size_B
 local size_A = 8
 
 local size_OP = 6
+local mask_OP = bit.lshift(1, size_OP)-1
 
 local pos_OP = 0
 local pos_A = pos_OP + size_OP
@@ -46,46 +47,46 @@ end
 local function iABx(o, a, b)
     return bit.bor(bit.lshift(o, pos_OP), bit.lshift(a or 0, pos_A), bit.lshift(b or 0, pos_Bx))
 end
-
 local opcodes = {
     [0] = "MOVE", -- A B     R(A) := R(B)
-    "LOADK", -- A Bx    R(A) := Kst(Bx)
-    "LOADBOOL", -- A B C   R(A) := (Bool)B; if (C) pc++
-    "LOADNIL", -- A B     R(A) := ... := R(B) := nil
-    "GETUPVAL", -- A B     R(A) := UpValue[B]
-    "GETGLOBAL", -- A Bx    R(A) := Gbl[Kst(Bx)]
-    "GETTABLE", -- A B C   R(A) := R(B)[RK(C)]
-    "SETGLOBAL", -- A Bx    Gbl[Kst(Bx)] := R(A)
-    "SETUPVAL", -- A B     UpValue[B] := R(A)
-    "SETTABLE", -- A B C   R(A)[RK(B)] := RK(C)
-    "NEWTABLE", -- A B C   R(A) := {} (size = B,C)
-    "SELF", -- A B C   R(A+1) := R(B); R(A) := R(B)[RK(C)]
-    "ADD", -- A B C   R(A) := RK(B) + RK(C)
-    "SUB", -- A B C   R(A) := RK(B) - RK(C)
-    "MUL", -- A B C   R(A) := RK(B) * RK(C)
-    "DIV", -- A B C   R(A) := RK(B) / RK(C)
-    "MOD", -- A B C   R(A) := RK(B) % RK(C)
-    "POW", -- A B C   R(A) := RK(B) ^ RK(C)
-    "UNM", -- A B     R(A) := -R(B)
-    "NOT", -- A B     R(A) := not R(B)
-    "LEN", -- A B     R(A) := length of R(B)
-    "CONCAT", -- A B C   R(A) := R(B).. ... ..R(C)
-    "JMP", -- sBx     pc+=sBx
-    "EQ", -- A B C   if ((RK(B) == RK(C)) ~= A) then pc++
-    "LT", -- A B C   if ((RK(B) <  RK(C)) ~= A) then pc++
-    "LE", -- A B C   if ((RK(B) <= RK(C)) ~= A) then pc++
-    "TEST", -- A C     if not (R(A) <=> C) then pc++
-    "TESTSET", -- A B C   if (R(B) <=> C) then R(A) := R(B) else pc++
-    "CALL", -- A B C   R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
-    "TAILCALL", -- A B C   return R(A)(R(A+1), ... ,R(A+B-1))
-    "RETURN", -- A B     return R(A), ... ,R(A+B-2)      (see note)
-    "FORLOOP", -- A sBx   R(A)+=R(A+2); if R(A) <?= R(A+1) then { pc+=sBx; R(A+3)=R(A) }
-    "FORPREP", -- A sBx   R(A)-=R(A+2); pc+=sBx
-    "TFORLOOP", -- A C     R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2)); if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++
-    "SETLIST", -- A B C   R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B
-    "CLOSE", -- A       close all variables in the stack up to (>=) R(A)
-    "CLOSURE", -- A Bx    R(A) := closure(KPROTO[Bx], R(A), ... ,R(A+n))
-    "VARARG" -- A B     R(A), R(A+1), ..., R(A+B-1) = vararg
+    [1] = "LOADK", -- A Bx    R(A) := Kst(Bx)
+    [2] = "LOADBOOL", -- A B C   R(A) := (Bool)B; if (C) pc++
+    [3] = "LOADNIL", -- A B     R(A) := ... := R(B) := nil
+    [4] = "GETUPVAL", -- A B     R(A) := UpValue[B]
+    [5] = "GETGLOBAL", -- A Bx    R(A) := Gbl[Kst(Bx)]
+    [6] = "GETTABLE", -- A B C   R(A) := R(B)[RK(C)]
+    [7] = "SETGLOBAL", -- A Bx    Gbl[Kst(Bx)] := R(A)
+    [8] = "SETUPVAL", -- A B     UpValue[B] := R(A)
+    [9] = "SETTABLE", -- A B C   R(A)[RK(B)] := RK(C)
+    [10] = "NEWTABLE", -- A B C   R(A) := {} (size = B,C)
+    [11] = "SELF", -- A B C   R(A+1) := R(B); R(A) := R(B)[RK(C)]
+    [12] = "ADD", -- A B C   R(A) := RK(B) + RK(C)
+    [13] = "SUB", -- A B C   R(A) := RK(B) - RK(C)
+    [14] = "MUL", -- A B C   R(A) := RK(B) * RK(C)
+    [15] = "DIV", -- A B C   R(A) := RK(B) / RK(C)
+    [16] = "MOD", -- A B C   R(A) := RK(B) % RK(C)
+    [17] = "POW", -- A B C   R(A) := RK(B) ^ RK(C)
+    [18] = "UNM", -- A B     R(A) := -R(B)
+    [19] = "NOT", -- A B     R(A) := not R(B)
+    [20] = "LEN", -- A B     R(A) := length of R(B)
+    [21] = "CONCAT", -- A B C   R(A) := R(B).. ... ..R(C)
+    [22] = "JMP", -- sBx     pc+=sBx
+    [23] = "EQ", -- A B C   if ((RK(B) == RK(C)) ~= A) then pc++
+    [24] = "LT", -- A B C   if ((RK(B) <  RK(C)) ~= A) then pc++
+    [25] = "LE", -- A B C   if ((RK(B) <= RK(C)) ~= A) then pc++
+    [26] = "TEST", -- A C     if not (R(A) <=> C) then pc++
+    [27] = "TESTSET", -- A B C   if (R(B) <=> C) then R(A) := R(B) else pc++
+    [28] = "CALL", -- A B C   R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
+    [29] = "TAILCALL", -- A B C   return R(A)(R(A+1), ... ,R(A+B-1))
+    [30] = "RETURN", -- A B     return R(A), ... ,R(A+B-2)      (see note)
+    [31] = "FORLOOP", -- A sBx   R(A)+=R(A+2); if R(A) <?= R(A+1) then { pc+=sBx; R(A+3)=R(A) }
+    [32] = "FORPREP", -- A sBx   R(A)-=R(A+2); pc+=sBx
+    [33] = "TFORLOOP", -- A C     R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2)); if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++
+    [34] = "SETLIST", -- A B C   R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B
+    [35] = "CLOSE", -- A       close all variables in the stack up to (>=) R(A)
+    [36] = "CLOSURE", -- A Bx    R(A) := closure(KPROTO[Bx], R(A), ... ,R(A+n))
+    [37] = "VARARG" -- A B     R(A), R(A+1), ..., R(A+B-1) = vararg
+    -- "63" (instruction 0xffffffff) is a placeholder made by break that compiles to JMP
 }
 --[[
     R(x) - register
@@ -110,6 +111,16 @@ local opcodes = {
 
     (*) All `skips' (pc++) assume that next instruction is a jump
 ]]
+
+local function getop(inst)
+    return bit.band(inst:byte(1), mask_OP)
+end
+
+local function is_jmp(inst)
+    local o = getop(inst)
+    return o == 22 -- JMP
+        or o == 63 -- break placeholder; replaced with JMP
+end
 
 local ABx_ops = { ["LOADK"]=true, ["GETGLOBAL"]=true, ["SETGLOBAL"]=true, ["CLOSURE"]=true }
 local AsBx_ops = { ["JMP"]=true, ["FORLOOP"]=true, ["FORPREP"]=true }
@@ -146,8 +157,6 @@ local function list(tbl, size)
     return i32(size)..table.concat(tbl, "")
 end
 
--- name, startline, endline, nupvals, nparams, is_vararg, maxstack,
--- code, constants, protos, <linedata, locals, upvalues>(debug, optional)
 local function chunk(data)
     return str(data.name, data.x64 and i64 or i32)
         .. i32(data.startline)
@@ -159,9 +168,9 @@ local function chunk(data)
         .. list(data.code, data.ninsts)
         .. list(data.constants)
         .. list(data.protos)
-        .. list({}) -- linedata
-        .. list({}) -- locals
-        .. list({}) -- upvalues
+        .. list({}) -- linedata (debug, optional)
+        .. list({}) -- locals (debug, optional)
+        .. list({}) -- upvalues (debug, optional)
 end
 
 local compiler = { cond={} }
@@ -190,25 +199,27 @@ end
 
 -- tobool: convert to boolean
 -- invert: skip next if false instead of skip next if true
-function compiler:compile_cond(ir, tobool, invert, r, ...)
+function compiler:compile_cond(ir, tobool, invert, ...)
     if tobool then invert = not invert end
     local t = ir[1]
+    local code
     local func = self.cond[t]
-    local code, r = nil, r
     if not func then
         if self[t] then
+            local r
             code, r = self[t](self, ir, r, ...)
             code = code..o.TEST(r, invert and 1 or 0)
         else
             error(("No lua51 compile rule for %s"):format(ir[1])) -- TODO: error
         end
     else
-        code, r = func(self, ir, invert, r, ...)
+        code = func(self, ir, invert, ...)
     end
     if tobool then
-        code = code..o.JMP(0,1)..o.LOADBOOL(r, 0, 1)..o.LOADBOOL(r, 1, 0)
+        if tobool == true then tobool = self:reg() end
+        code = code..o.JMP(0,1)..o.LOADBOOL(tobool, 0, 1)..o.LOADBOOL(tobool, 1, 0)
     end
-    return code, r
+    return code, tobool
 end
 
 function compiler:compile(ir, r, ...)
@@ -216,7 +227,7 @@ function compiler:compile(ir, r, ...)
     local func = self[t]
     if not func then
         if self.cond[t] then
-            return self:compile_cond(self, ir, true, false, r, ...)
+            return self:compile_cond(self, ir, r or true, false, ...)
         else
             error(("No lua51 compile rule for %s"):format(ir[1])) -- TODO: error
         end
@@ -224,29 +235,44 @@ function compiler:compile(ir, r, ...)
     return func(self, ir, r, ...)
 end
 
-function compiler:compile_all(tbl)
+function compiler:compile_all(tbl, allow_breaks)
+    local old = self.breaks
+    self.breaks = allow_breaks or self.breaks
     local bc = {}
     for i,v in ipairs(tbl) do
         bc[i] = self:compile(v)
     end
+    self.breaks = old
     return table.concat(bc, "")
 end
 
-function compiler:reg(n)
-    if n then
-        self.regs[n] = true
-        if self.maxstack <= n then
-            self.maxstack = n+1
+local DEBUG_REGS = false
+function compiler:reg(r, v)
+    if v == nil then v = true end
+    if r then
+        if r > 255 then
+            error("Cannot allocate register "..tostring(r))
         end
-        return n
+        if DEBUG_REGS then
+            print("allocn", r, v)
+        end
+        self.regs[r] = v
+        if self.maxstack <= r then
+            self.maxstack = r+1
+        end
+        return r
     end
-    for i=self.irc.nlocals[self.scopedepth],255 do
-        if not self.regs[i] then
-            self.regs[i] = true
-            if self.maxstack <= i then
-                self.maxstack = i+1
+
+    for r=0,255 do
+        if not self.regs[r] then
+            if DEBUG_REGS then
+                print("alloc", r, self.regs[r], "->", v)
             end
-            return i
+            self.regs[r] = v
+            if self.maxstack <= r then
+                self.maxstack = r+1
+            end
+            return r
         end
     end
     error("Could not allocate register")
@@ -275,25 +301,41 @@ local function same(a, b)
     return false
 end
 
-local function pushpop(allocv)
-    return function(self, ir)
-        local bc = {}
-        for i=2,#ir do
-            if type(ir[i]) == "number" then
-                self.regs[ir[i]] = allocv
-                bc[i-1] = ""
-            else
-                local a, ra = self:compile(ir[i])
-                self.regs[ra] = allocv
-                bc[i-1] = a
+local PUSHED = setmetatable({}, { __tostring=function() return "PUSH" end })
+compiler[IR.POP] = function(self, ir)
+    local bc = {}
+    for i=2,#ir do
+        if type(ir[i]) == "number" then
+            self:reg(ir[i], false)
+            bc[i-1] = ""
+        else
+            -- pushes are important allocations (i.e. locals),
+            -- they shouldn't be overriden with expressions (e.g. assignments),
+            -- which compile to IR.POP
+            local a, ra = self:compile(ir[i])
+            if self.regs[ra] ~= PUSHED then
+                self:reg(ra, false)
             end
+            bc[i-1] = a
         end
-        return table.concat(bc, "")
     end
+    return table.concat(bc, "")
 end
 
-compiler[IR.POP] = pushpop(false)
-compiler[IR.PUSH] = pushpop(true)
+compiler[IR.PUSH] = function(self, ir)
+    local bc = {}
+    for i=2,#ir do
+        if type(ir[i]) == "number" then
+            self:reg(ir[i], PUSHED)
+            bc[i-1] = ""
+        else
+            local a, ra = self:compile(ir[i])
+            self:reg(ra, PUSHED)
+            bc[i-1] = a
+        end
+    end
+    return table.concat(bc, "")
+end
 
 compiler[IR.RETURN] = function(self, v)
     local a, ra = self:compile(v[2])
@@ -301,32 +343,55 @@ compiler[IR.RETURN] = function(self, v)
 end
 
 compiler[IR.IF] = function(self, v)
-    local cond = self:compile_cond(v[2])
     local t = self:compile_all(v[3])
+    local jmp = is_jmp(t)
+    local cond = self:compile_cond(v[2], false, jmp)
+    local len = #t / 4
     if v[4] then
         local f = self:compile_all(v[4])
-        t = t..o.JMP(0, #f / 4)
-        return cond..o.JMP(0, #t / 4)..t..f
+        t = t..o.JMP(0, #f / 4)..f
     end
-    return cond..o.JMP(0, #t / 4)..t
+    if not jmp then
+        cond = cond..o.JMP(0, len)
+    end
+    return cond..t
 end
 
+compiler[IR.LOOP] = function(self, v)
+    local code = self:compile_all(v[2], true)
+    local len = #code / 4
+    code = code..o.JMP(0, -len - 1)
+    code = code:gsub("()\xFF\xFF\xFF\xFF", function(pos)
+        return o.JMP(0, len - pos/4)
+    end)
+    return code
+end
+
+compiler[IR.BREAK] = function(self)
+    if not self.breaks then
+        error("break not allowed outside loops") -- TODO: error
+    end
+    return "\xFF\xFF\xFF\xFF"
+end
+
+local function shouldpop(self, r)
+    return r < 255 and self.regs[r] ~= PUSHED
+end
 local function binop(inst)
     return function(self, v, r)
         local lhs, rhs = v[2], v[3]
-
         local b, rb
-        local a, ra = self:compile(lhs, r)
+        local a, ra = self:RK(lhs, r)
         if same(lhs, rhs) then
             b, rb = "", ra
         else
-            b, rb = self:compile(rhs)
+            b, rb = self:RK(rhs)
         end
 
         local s = a..b..inst(ra, ra, rb)
 
-        if ra ~= rb then
-            self.regs[rb] = false
+        if ra ~= rb and shouldpop(self, rb) then
+            self:reg(rb, false)
         end
         return s, ra
     end
@@ -386,7 +451,7 @@ compiler[IR.CONCAT] = function(self, v, r)
         c = reg
     end
 
-    local s, r = table.concat(bc, "")..o.CONCAT(move or r, b, c)
+    local s = table.concat(bc, "")..o.CONCAT(move or r, b, c)
     for i=move and b+1 or b,c do
         self.regs[i] = false
     end
@@ -394,8 +459,41 @@ compiler[IR.CONCAT] = function(self, v, r)
 end
 
 compiler[IR.UNM] = unop(o.UNM)
-compiler[IR.NOT] = unop(o.NOT)
 compiler[IR.LEN] = unop(o.LEN)
+compiler.cond[IR.NOT] = function(self, v, invert)
+    return self:compile_cond(v[2], not invert)
+end
+
+local function bincmp(inst, swap)
+    return function(self, v, invert)
+        local lhs, rhs = v[2], v[3]
+
+        local b, rc
+        local a, rb = self:RK(lhs)
+        if same(lhs, rhs) then
+            b, rc = "", rb
+        else
+            b, rc = self:RK(rhs)
+        end
+
+        if swap then
+            rc, rb = rb, rc
+        end
+        local s = a..b..inst(invert and 1 or 0, rb, rc)
+
+        if rb ~= rc and shouldpop(self, rc) then
+            self:reg(rc, false)
+        end
+        return s, rb
+    end
+end
+
+compiler.cond[IR.EQ] = bincmp(o.EQ)
+compiler.cond[IR.NEQ] = bincmp(o.EQ, true)
+compiler.cond[IR.LT] = bincmp(o.LT)
+compiler.cond[IR.LTEQ] = bincmp(o.LE)
+compiler.cond[IR.GT] = bincmp(o.LT, true)
+compiler.cond[IR.GTEQ] = bincmp(o.LE, true)
 
 compiler[IR.GETGLOBAL] = function(self, v, a)
     a = a or self:reg()

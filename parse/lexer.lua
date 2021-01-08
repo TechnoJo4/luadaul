@@ -74,6 +74,7 @@ local function get_next(source, pos, line, column)
         if c == "\n" then
             line = line + 1
             column = 1
+            return token({ type = T.Newline, pos = pos-1, line = line, column = 0 }), pos, line, column
         else
             column = column + 1
         end
@@ -240,7 +241,7 @@ local function get_next(source, pos, line, column)
         end
     end
 
-    if digit[c] or c == '.' then
+    if digit[c] then
         local start = pos
         local startc = column
         local dot = c == '.'

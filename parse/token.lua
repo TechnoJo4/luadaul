@@ -8,6 +8,7 @@ return require("parse.utils").enum({
     "Comma",
     "Dot",
     "Semi",
+    "Newline",
     "LBrace",
     "RBrace",
     "LPar",

@@ -10,14 +10,14 @@ if process.argv[2] then
     local irc = ir.new_irc()
     f:close()
     local v = parser:stmt()
-    print(v)
-    print(parser.lexer.get(1))
+    --print(v)
+    --print(parser.lexer.get(1))
     irc:stmt(v)
-    print()
+    --print()
     for _,v in ipairs(irc.ir) do
         print(v)
     end
-    local bcc = lua51.new_compiler(irc, process.argv[3] ~= "32")
+    local bcc = lua51.new_compiler(irc, true)
     local bc = bcc:compile_main("test")
 
     local f = io.open("test.luac", "wb")
