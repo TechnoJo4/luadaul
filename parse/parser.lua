@@ -229,6 +229,18 @@ function new_parser(source)
         return parser:stmt(true)
     end)
 
+    self:def_stmt(T.If, function(parser, token)
+        local s = expr({ ET.If })
+        consume(parser.lexer, T.LPar)
+        s.cond = parser:expr()
+        consume(parser.lexer, T.RPar)
+        s.true_branch = parser:stmt(true)
+        if match(parser.lexer, T.Else) then
+            s.false_branch = parser:stmt(true)
+        end
+        return s
+    end)
+
     return self
 end
 

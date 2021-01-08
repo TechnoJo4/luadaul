@@ -11,6 +11,7 @@ local enum = utils.enum
 --[[
     Notes:
     (*) "POP" actually means "forget"/deallocate.
+        conversely, "PUSH" means allocate.
 ]]
 local IR = enum({
     "NIL", "TRUE", "FALSE",
@@ -27,14 +28,23 @@ local IR = enum({
     "LT", "LTEQ",
     "GT", "GTEQ",
     "CALL", "NAMECALL",
-    "RETURN", "POP",
+    "RETURN",
+    "POP", "PUSH",
     "LOOP", "IF", "BREAK"
 }, true)
 
 local inst_meta = { __tostring=function(self)
     local t = {}
     for k,v in pairs(self) do
-        t[k] = tostring(v)
+        if type(v) == "table" and (not getmetatable(v) or not getmetatable(v).__tostring) then
+            local s = {}
+            for i,v in pairs(v) do
+                s[i] = tostring(v)
+            end
+            t[k] = "["..table.concat(s, ", ").."]"
+        else
+            t[k] = tostring(v)
+        end
     end
     return "("..table.concat(t, " ")..")"
 end, __index={ __inst=true } }
@@ -119,12 +129,23 @@ function irc:expr(expr)
     return inst(func(self, expr))
 end
 
-function irc:stmt(stmt)
+function irc:stmt(stmt, ret)
     local func = self[stmt[1]]
     if not func then
         error(("No IR compile rule for %s"):format(stmt[1].type)) -- TODO: error
     end
-    func(self, stmt)
+    if ret then
+        local t = {}
+        local old = self.emit
+        self.emit = function(self, ir)
+            t[#t+1] = inst(ir)
+        end
+        func(self, stmt)
+        self.emit = old
+        return t
+    else
+        func(self, stmt)
+    end
 end
 
 function irc:declare(name)
@@ -160,7 +181,18 @@ irc[ET.Block] = function(self, stmt)
 end
 
 irc[ET.Declare] = function(self, stmt)
-    self:emit({ IR.SETLOCAL, self:declare(stmt.name.name), self:expr(stmt.value) })
+    local r = self:declare(stmt.name.name)
+    self:emit({ IR.PUSH, r })
+    self:emit({ IR.SETLOCAL, r, self:expr(stmt.value) })
+end
+
+irc[ET.If] = function(self, stmt)
+    self:emit({
+        IR.IF,
+        self:expr(stmt.cond),
+        self:stmt(stmt.true_branch, true),
+        stmt.false_branch and self:stmt(stmt.false_branch, true)
+    })
 end
 
 irc[T.Name] = function(self, tok)
@@ -269,7 +301,7 @@ irc["="] = function(self, expr)
         else -- ET.ExprIndex
             lr = self:expr(target.index)
         end
-        return { IT.SETTABLE, ll, lr, self:expr(expr[3]) }
+        return { IR.SETTABLE, ll, lr, self:expr(expr[3]) }
     end
 end
 

@@ -114,12 +114,17 @@ local opcodes = {
 local ABx_ops = { ["LOADK"]=true, ["GETGLOBAL"]=true, ["SETGLOBAL"]=true, ["CLOSURE"]=true }
 local AsBx_ops = { ["JMP"]=true, ["FORLOOP"]=true, ["FORPREP"]=true }
 
-local DEBUG_INSTS = true
+-- warning: debug printing not in the same order as the bytecode
+local DEBUG_INSTS = false
 local o = {}
 for k,v in pairs(opcodes) do
     local f = iABC
-    if ABx_ops[v] or AsBx_ops[v] then
+    if ABx_ops[v] then
         f = iABx
+    elseif AsBx_ops[v] then
+        f = function(o, a, b)
+            return iABx(o, a, b + 131071)
+        end
     end
     local padded = v..(" "):rep(10-#v)
     o[v] = function(...)
@@ -159,7 +164,7 @@ local function chunk(data)
         .. list({}) -- upvalues
 end
 
-local compiler = {}
+local compiler = { cond={} }
 local function new_compiler(irc, x64)
     local size_t = x64 and i64 or i32
 
@@ -183,12 +188,48 @@ local function new_compiler(irc, x64)
     return self
 end
 
-function compiler:compile(ir, ...)
-    local func = self[ir[1]]
+-- tobool: convert to boolean
+-- invert: skip next if false instead of skip next if true
+function compiler:compile_cond(ir, tobool, invert, r, ...)
+    if tobool then invert = not invert end
+    local t = ir[1]
+    local func = self.cond[t]
+    local code, r = nil, r
     if not func then
-        error(("No lua51 compile rule for %s"):format(ir[1])) -- TODO: error
+        if self[t] then
+            code, r = self[t](self, ir, r, ...)
+            code = code..o.TEST(r, invert and 1 or 0)
+        else
+            error(("No lua51 compile rule for %s"):format(ir[1])) -- TODO: error
+        end
+    else
+        code, r = func(self, ir, invert, r, ...)
     end
-    return func(self, ir, ...)
+    if tobool then
+        code = code..o.JMP(0,1)..o.LOADBOOL(r, 0, 1)..o.LOADBOOL(r, 1, 0)
+    end
+    return code, r
+end
+
+function compiler:compile(ir, r, ...)
+    local t = ir[1]
+    local func = self[t]
+    if not func then
+        if self.cond[t] then
+            return self:compile_cond(self, ir, true, false, r, ...)
+        else
+            error(("No lua51 compile rule for %s"):format(ir[1])) -- TODO: error
+        end
+    end
+    return func(self, ir, r, ...)
+end
+
+function compiler:compile_all(tbl)
+    local bc = {}
+    for i,v in ipairs(tbl) do
+        bc[i] = self:compile(v)
+    end
+    return table.concat(bc, "")
 end
 
 function compiler:reg(n)
@@ -234,6 +275,42 @@ local function same(a, b)
     return false
 end
 
+local function pushpop(allocv)
+    return function(self, ir)
+        local bc = {}
+        for i=2,#ir do
+            if type(ir[i]) == "number" then
+                self.regs[ir[i]] = allocv
+                bc[i-1] = ""
+            else
+                local a, ra = self:compile(ir[i])
+                self.regs[ra] = allocv
+                bc[i-1] = a
+            end
+        end
+        return table.concat(bc, "")
+    end
+end
+
+compiler[IR.POP] = pushpop(false)
+compiler[IR.PUSH] = pushpop(true)
+
+compiler[IR.RETURN] = function(self, v)
+    local a, ra = self:compile(v[2])
+    return a..o.RETURN(ra, 2)
+end
+
+compiler[IR.IF] = function(self, v)
+    local cond = self:compile_cond(v[2])
+    local t = self:compile_all(v[3])
+    if v[4] then
+        local f = self:compile_all(v[4])
+        t = t..o.JMP(0, #f / 4)
+        return cond..o.JMP(0, #t / 4)..t..f
+    end
+    return cond..o.JMP(0, #t / 4)..t
+end
+
 local function binop(inst)
     return function(self, v, r)
         local lhs, rhs = v[2], v[3]
@@ -262,9 +339,24 @@ local function unop(inst)
     end
 end
 
+compiler[IR.FALSE] = function(self, v, r)
+    r = r or self:reg()
+    return o.LOADBOOL(r, 0, 0)
+end
+
+compiler[IR.TRUE] = function(self, v, r)
+    r = r or self:reg()
+    return o.LOADBOOL(r, 1, 0)
+end
+
 compiler[IR.NIL] = function(self, v, r)
     r = r or self:reg()
     return o.LOADNIL(r, r)
+end
+
+compiler[IR.CONST] = function(self, v, a)
+    a = a or self:reg()
+    return o.LOADK(a, v[2]), a
 end
 
 compiler[IR.ADD] = binop(o.ADD)
@@ -304,27 +396,6 @@ end
 compiler[IR.UNM] = unop(o.UNM)
 compiler[IR.NOT] = unop(o.NOT)
 compiler[IR.LEN] = unop(o.LEN)
-
-compiler[IR.CONST] = function(self, v, a)
-    a = a or self:reg()
-    return o.LOADK(a, v[2]), a
-end
-
-compiler[IR.POP] = function(self, v)
-    if type(v[2]) == "number" then
-        self.regs[v[2]] = false
-        return ""
-    end
-
-    local a, ra = self:compile(v[2])
-    self.regs[ra] = false
-    return a
-end
-
-compiler[IR.RETURN] = function(self, v)
-    local a, ra = self:compile(v[2])
-    return a..o.RETURN(ra, 2)
-end
 
 compiler[IR.GETGLOBAL] = function(self, v, a)
     a = a or self:reg()

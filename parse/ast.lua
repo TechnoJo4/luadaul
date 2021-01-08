@@ -35,7 +35,11 @@ local ET = enum({
     "Return",
     "Expression",
     "Declare",
-    "Block"
+    "Block",
+    "If",
+    "While",
+    "Loop",
+    "Break",
 }, true)
 
 local expr_tostring
@@ -100,6 +104,14 @@ local ET_tostring = {
         end
 
         return stmts
+    end,
+    [ET.If] = function(expr, lvl)
+        return {
+            "If",
+            "cond="..tostr(expr.cond, lvl),
+            "true="..tostr(expr.true_branch, lvl),
+            expr.false_branch and "false="..tostr(expr.false_branch, lvl)
+        }
     end,
 }
 
