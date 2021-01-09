@@ -21,7 +21,7 @@ local P = enum({
     "And",
     "Equality",
     "Comparison",
-    "Elvis",
+    "Coalescing",
     "Concat",
     "Addition",
     "Multiplication",
@@ -63,9 +63,10 @@ end
 local function match(lexer, ttype)
     local token = lexer.get(1)
     if ttype ~= T.Newline then
+        local i = 2
         while token.type == T.Newline do
-            lexer.adv()
-            token = lexer.get(1)
+            token = lexer.get(i)
+            i = i + 1
         end
     end
     if token.type == ttype then
@@ -120,22 +121,22 @@ function new_parser(source)
     self:def_pre("#", prefix)
     self:def_pre("!", prefix)
 
-    self:def_post("||", P.Or, left)
-    self:def_post("&&", P.And, left)
+    self:def_post("||", P.Or, left, true)
+    self:def_post("&&", P.And, left, true)
     self:def_post("==", P.Equality, left)
     self:def_post("!=", P.Equality, left)
     self:def_post("<", P.Comparison, left)
     self:def_post(">", P.Comparison, left)
     self:def_post("<=", P.Comparison, left)
     self:def_post(">=", P.Comparison, left)
-    self:def_post("?:", P.Elvis, left)
-    self:def_post("..", P.Concat, right)
-    self:def_post("+", P.Addition, left)
-    self:def_post("-", P.Addition, left)
-    self:def_post("/", P.Multiplication, left)
-    self:def_post("*", P.Multiplication, left)
-    self:def_post("%", P.Multiplication, left)
-    self:def_post("^", P.Power, right)
+    self:def_post("??", P.Coalescing, left, true)
+    self:def_post("..", P.Concat, right, true)
+    self:def_post("+", P.Addition, left, true)
+    self:def_post("-", P.Addition, left, true)
+    self:def_post("/", P.Multiplication, left, true)
+    self:def_post("*", P.Multiplication, left, true)
+    self:def_post("%", P.Multiplication, left, true)
+    self:def_post("^", P.Power, right, true)
 
     local _assignables = enum({ ET.ExprIndex, ET.NameIndex, T.Name })
     self:def_post("=", P.Assignment, function(parser, token, left, prec)
@@ -148,6 +149,65 @@ function new_parser(source)
         return expr({ token, left, parser:expr(prec-1) })
     end)
 
+    local function block_lambda(parser)
+        local i = 0
+        local _match = match
+        local function matchr(...)
+            local m = _match(parser.lexer, ...)
+            if m then
+                i = i + 1
+            end
+            return m
+        end
+
+        -- parse args
+        local args = {}
+        while true do
+            local name = matchr(T.Name)
+            if not name then
+                args = nil
+                parser.lexer.recede(i)
+                break
+            end
+            args[#args+1] = name
+
+            local m = matchr(T.Oper)
+            if m and m.oper == "->" then
+                break
+            end
+            if m or not matchr(T.Comma) then
+                args = nil
+                parser.lexer.recede(i)
+                break
+            end
+        end
+
+        -- parse body
+        matchr, i = nil, 1
+        local stmts = {}
+        if not match(parser.lexer, T.RBrace) then
+            while true do
+                stmts[i] = parser:stmt(false, true)
+                i = i + 1
+                if match(parser.lexer, T.RBrace) then
+                    break
+                else
+                    consume_end(parser.lexer)
+                end
+            end
+        end
+
+        -- expression body should return expression value
+        if #stmts == 1 then
+            local s = stmts[1]
+            if s[1] == ET.Expression then
+                s[1] = ET.Return
+            end
+        end
+        return { ET.Lambda, args=args, stmts=stmts }
+    end
+    self:def_pre(T.LBrace, block_lambda)
+
     local function call(parser)
         local i = 1
         local args = {}
@@ -158,7 +218,9 @@ function new_parser(source)
             until not match(parser.lexer, T.Comma)
             consume(parser.lexer, T.RPar)
         end
-        -- TODO: Trailing lambda call
+        if match(parser.lexer, T.LBrace) then
+            args[i] = block_lambda(parser)
+        end
 
         return args
     end
@@ -173,12 +235,18 @@ function new_parser(source)
     end)
     self:def_post(":", P.Primary, function(parser, token, left)
         local name = consume(parser.lexer, T.Name)
-        consume(parser.lexer, T.LPar)
+        local args
+        if match(parser.lexer, T.LBrace) then
+            args = { block_lambda(parser) }
+        else
+            consume(parser.lexer, T.LPar)
+            args = call(parser)
+        end
         return expr({
             ET.Namecall,
             from=left,
             target=name,
-            args=call(parser),
+            args=args,
             token
         })
     end)
@@ -186,10 +254,16 @@ function new_parser(source)
         return expr({
             ET.Call,
             target=left,
-            args=call(parser),
-            token
+            args=call(parser)
         })
     end)
+    self:def_post(T.LBrace, P.Primary, function(parser, token, left)
+        return expr({
+            ET.Call,
+            target=left,
+            args={ block_lambda(parser) }
+        })
+    end, false, true)
     self:def_post("|>", P.Pipeline, function(parser, token, left)
         local e = parser:expr(P.Primary - 1)
         local t = e[1]
@@ -203,6 +277,7 @@ function new_parser(source)
         args[1] = left
         return e
     end)
+    -- TODO: pipeline assignment
 
     self:def_post(T.LSQB, P.Primary, function(parser, token, left)
         return expr({
@@ -255,10 +330,11 @@ function new_parser(source)
         consume(parser.lexer, T.LPar)
         s.cond = parser:expr()
         consume(parser.lexer, T.RPar)
-        s.true_branch = parser:stmt(true)
+        s.true_branch = parser:stmt(true, true)
         if match(parser.lexer, T.Else) then
             s.false_branch = parser:stmt(true)
         end
+        consume_end(parser.lexer)
         return s
     end)
 
@@ -282,7 +358,7 @@ function new_parser(source)
     return self
 end
 
-function parser:stmt(allow_block)
+function parser:stmt(allow_block, no_expr_end)
     local token = self.lexer.get(1)
     while token.type == T.Newline do
         self.lexer.adv()
@@ -295,7 +371,9 @@ function parser:stmt(allow_block)
         stmt = func(self, token)
     else
         stmt = expr({ ET.Expression, self:expr() })
-        consume_end(self.lexer)
+        if not no_expr_end then
+            consume_end(self.lexer)
+        end
     end
     return stmt
 end
@@ -335,7 +413,7 @@ function parser:expr(prec)
         end
 
         local rule = self.post[idx]
-        if not rule or rule.prec <= prec then break end
+        if not rule or rule.prec <= prec or (i > 1 and not rule.skipnl) then break end
 
         self.lexer.adv(i)
         left = rule.func(self, token, left, rule.prec)
@@ -352,8 +430,17 @@ function parser:def_pre(tok, func)
     self.pre[tok] = func
 end
 
-function parser:def_post(tok, prec, func)
-    self.post[tok] = { prec=prec, func=func }
+function parser:def_post(tok, prec, func, create_assign_oper, no_nl)
+    self.post[tok] = { prec=prec, func=func, skipnl=(not no_nl) }
+    if create_assign_oper then
+        if type(tok) ~= "string" then
+            error("Attempt to define a post rule with create_assign_oper for a non-oper token type "..tostring(tok))
+        end
+        tok = tok .. "="
+        self.post[tok] = { prec=P.Assignment, func=function(parser, token, left, prec)
+            return expr({ ET.OperAssign, token, left, parser:expr(prec - 1) })
+        end }
+    end
 end
 
 return { new_parser=new_parser, parser=parser }

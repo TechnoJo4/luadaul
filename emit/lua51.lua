@@ -5,6 +5,8 @@ local ffi = require("ffi")
 local irc = require("emit.ir")
 local IR = irc.IR
 
+local PUSH = setmetatable({}, { __tostring=function() return "PUSH" end })
+
 -- TODO: support non-luajit?
 -- i should probably find a safer way to do this anyways
 local function i8(num)
@@ -179,10 +181,14 @@ local function new_compiler(irc, x64)
 
     local self = setmetatable({
         name=nil, startline=0, endline=0, is_vararg=0,
-        nupvals=0, nparams=0, maxstack=0,
+        nupvals=irc.nupvals, nparams=irc.nparams, maxstack=0,
         ninsts=0, code={}, constants={}, protos={},
         irc=irc, scopedepth=0, regs={}, x64=x64
     }, { __index=compiler })
+
+    for k,v in pairs(irc.protos) do
+        self.protos[k] = new_compiler(v, x64):compile_chunk()
+    end
 
     for k,v in pairs(irc.constants) do
         local t = type(k)
@@ -301,7 +307,6 @@ local function same(a, b)
     return false
 end
 
-local PUSHED = setmetatable({}, { __tostring=function() return "PUSH" end })
 compiler[IR.POP] = function(self, ir)
     local bc = {}
     for i=2,#ir do
@@ -313,7 +318,7 @@ compiler[IR.POP] = function(self, ir)
             -- they shouldn't be overriden with expressions (e.g. assignments),
             -- which compile to IR.POP
             local a, ra = self:compile(ir[i])
-            if self.regs[ra] ~= PUSHED then
+            if self.regs[ra] ~= PUSH then
                 self:reg(ra, false)
             end
             bc[i-1] = a
@@ -326,11 +331,11 @@ compiler[IR.PUSH] = function(self, ir)
     local bc = {}
     for i=2,#ir do
         if type(ir[i]) == "number" then
-            self:reg(ir[i], PUSHED)
+            self:reg(ir[i], PUSH)
             bc[i-1] = ""
         else
             local a, ra = self:compile(ir[i])
-            self:reg(ra, PUSHED)
+            self:reg(ra, PUSH)
             bc[i-1] = a
         end
     end
@@ -375,7 +380,7 @@ compiler[IR.BREAK] = function(self)
 end
 
 local function shouldpop(self, r)
-    return r < 255 and self.regs[r] ~= PUSHED
+    return r < 255 and self.regs[r] ~= PUSH
 end
 local function binop(inst)
     return function(self, v, r)
@@ -422,6 +427,19 @@ end
 compiler[IR.CONST] = function(self, v, a)
     a = a or self:reg()
     return o.LOADK(a, v[2]), a
+end
+
+local _closure_upval_ops = { [IR.GETUPVAL] = o.GETUPVAL, [IR.GETLOCAL] = o.MOVE }
+compiler[IR.CLOSURE] = function(self, v, a)
+    a = a or self:reg()
+    local bc = { o.CLOSURE(a, v[2]) }
+    if #v > 2 then
+        for i=3,#v do
+            local ut, ui = unpack(v[i])
+            bc[i-1] = _closure_upval_ops[ut](0, ui)
+        end
+    end
+    return table.concat(bc, ""), a
 end
 
 compiler[IR.ADD] = binop(o.ADD)
@@ -513,6 +531,11 @@ compiler[IR.GETLOCAL] = function(self, v, r)
     end
 end
 
+compiler[IR.GETUPVAL] = function(self, v, r)
+    r = r or self:reg()
+    return o.GETUPVAL(r, v[2]), r
+end
+
 compiler[IR.SETLOCAL] = function(self, v, r)
     if not r or r == v[2] then
         return self:compile(v[3], v[2])
@@ -520,6 +543,11 @@ compiler[IR.SETLOCAL] = function(self, v, r)
         local code, a = self:compile(v[3], r)
         return code..o.MOVE(v[2], r), r
     end
+end
+
+compiler[IR.SETUPVAL] = function(self, v, r)
+    local a, r = self:compile(v[3], r)
+    return a..o.SETUPVAL(r, v[2]), r
 end
 
 compiler[IR.GETTABLE] = function(self, v, ra)

@@ -8,13 +8,6 @@ local utils = require("parse.utils")
 local ET = ast.expr_types
 local enum = utils.enum
 
---[[
-    Notes:
-    (*) "POP" actually means "forget"/deallocate.
-        conversely, "PUSH"ing is actually allocating.
-        The stack behaves like registers, but the
-        allocation behaves like a stack anyways so this isn't actually crucial.
-]]
 local IR = enum({
     "NIL", "TRUE", "FALSE", "CONST",
     "GETTABLE", "SETTABLE",
@@ -32,7 +25,8 @@ local IR = enum({
     "CALL", "NAMECALL",
     "RETURN",
     "POP", "PUSH",
-    "LOOP", "IF", "BREAK"
+    "LOOP", "IF", "BREAK",
+    "CLOSURE"
 }, true)
 
 local inst_meta = { __tostring=function(self)
@@ -56,15 +50,44 @@ end
 
 -- IR "compiler"
 local irc = {}
-local irc_meta = { __index=irc }
-local function new_irc()
+local irc_meta = {
+    __index=irc,
+    __tostring=function(self, lvl) -- for debug logging
+        local protos = {}
+        for k,v in pairs(self.protos) do
+            protos[k] = "\n"..tostring(v)
+        end
+        local constants = {}
+        for k,v in pairs(self.constants) do
+            constants[v+1] = tostring(k)
+        end
+        local ir = {}
+        for k,v in pairs(self.ir) do
+            ir[k] = tostring(v)
+        end
+
+        return "Prototypes: ["..table.concat(protos, ",")
+            .. "],\nConstants: ["..table.concat(constants, ", ")
+            .. "],\nCode: [\n"..table.concat(ir, "\n")
+            .. "\n]"
+    end
+}
+local function new_irc(parent, args)
+    local nparams = args and #args or 0
     local self = setmetatable({
-        ir = {}, pos = 0,
-        protos = {},
-        depth = 0,
+        ir = {},
+        protos = {}, parent=parent,
         constants = {}, nconstants = 0,
-        locals = {}, nlocals = { [0]=0 }
+        upvals = {}, nupvals = 0,
+        locals = {}, nlocals = { [0] = nparams }, depth = 0,
+        nparams=nparams
     }, irc_meta)
+
+    if args then
+        for i,v in ipairs(args) do
+            self.ir[#self.ir+1] = inst({ IR.PUSH, self:declare(v.name) })
+        end
+    end
 
     return self
 end
@@ -77,25 +100,40 @@ end
 function irc:end_scope()
     local depth = self.depth
     local locals = self.locals
+    local code
     if self.nlocals[depth] > 0 then
+        code = { IR.POP }
         local n = self.nlocals[depth]
-        for i=1, n do
-            self:emit({ IR.POP, n-i })
+        for i=1,n do
+            code[i+1] = n-i
             locals[#locals] = nil
         end
     end
     self.nlocals[depth] = nil
     self.depth = depth - 1
+    return code
 end
 
-function irc:resolve(name)
-    local locals = self.locals
-    for i=#locals,1,-1 do
-        if locals[i] == name then
-            return i-1
+function irc:resolve(name, set)
+    for i=#self.locals,1,-1 do
+        if self.locals[i] == name then
+            return set and IR.SETLOCAL or IR.GETLOCAL, i-1
         end
     end
-    return -1
+    for i=#self.upvals,1,-1 do
+        if self.upvals[i].name == name then
+            return set and IR.SETUPVAL or IR.GETUPVAL, i-1
+        end
+    end
+    if self.parent then
+        local ir, i = self.parent:resolve(name, set)
+        if i ~= -1 then
+            self.upvals[#self.upvals+1] = { name=name, i=i, upval=ir == (set and IR.SETUPVAL or IR.GETUPVAL) }
+            self.nupvals = self.nupvals + 1
+            return set and IR.SETUPVAL or IR.GETUPVAL, self.nupvals-1
+        end
+    end
+    return set and IR.SETGLOBAL or IR.GETGLOBAL, -1
 end
 
 function irc:constant(value, makeir)
@@ -108,10 +146,6 @@ function irc:constant(value, makeir)
         return inst({ IR.CONST, self.nconstants-1 })
     end
     return self.nconstants-1
-end
-
-function irc:emit(ir)
-    self.ir[#self.ir+1] = inst(ir)
 end
 
 function irc:expr(expr)
@@ -136,17 +170,18 @@ function irc:stmt(stmt, ret)
     if not func then
         error(("No IR compile rule for %s"):format(stmt[1])) -- TODO: error
     end
+
+    local code = { func(self, stmt) }
+    for i,v in pairs(code) do
+        code[i] = inst(v)
+    end
     if ret then
-        local t = {}
-        local old = self.emit
-        self.emit = function(self, ir)
-            t[#t+1] = inst(ir)
-        end
-        func(self, stmt)
-        self.emit = old
-        return t
+        return unpack(code)
     else
-        func(self, stmt)
+        local i = #self.ir
+        for j,v in pairs(code) do
+            self.ir[i+j] = v
+        end
     end
 end
 
@@ -163,46 +198,61 @@ function irc:declare(name)
     return #self.locals-1
 end
 
+function irc:closure(args)
+    local n = 0
+    for _,v in pairs(self.protos) do
+        n = n + 1
+    end
+    if n >= 255 then
+        -- can this even realistically happen
+        error("Too many prototypes")
+    end
+    local new = new_irc(self, args)
+    self.protos[#self.protos+1] = new
+    return new, #self.protos-1
+end
+
 irc[ET.Expression] = function(self, stmt)
     local v = self:expr(stmt[2])
     if v[1] == IR.CALL then v[3] = 0 end
     if v[1] == IR.NAMECALL then v[4] = 0 end
-    self:emit({ IR.POP, v })
+    return { IR.POP, v }
 end
 
 irc[ET.Return] = function(self, stmt)
-    self:emit({ IR.RETURN, self:expr(stmt[2]) })
+    return { IR.RETURN, self:expr(stmt[2]) }
 end
 
 irc[ET.Break] = function(self, stmt)
-    self:emit({ IR.BREAK })
+    return { IR.BREAK }
 end
 
 irc[ET.Block] = function(self, stmt)
+    local c = {}
     self:start_scope()
     for _,v in ipairs(stmt.stmts) do
-        self:stmt(v)
+        c[#c+1] = self:stmt(v)
     end
-    self:end_scope()
+    c[#c+1] = self:end_scope()
+    return unpack(c)
 end
 
 irc[ET.Declare] = function(self, stmt)
     local r = self:declare(stmt.name.name)
-    self:emit({ IR.PUSH, r })
-    self:emit({ IR.SETLOCAL, r, self:expr(stmt.value) })
+    return { IR.PUSH, r }, { IR.SETLOCAL, r, self:expr(stmt.value) }
 end
 
 irc[ET.If] = function(self, stmt)
-    self:emit({
+    return {
         IR.IF,
         self:expr(stmt.cond),
         self:stmt(stmt.true_branch, true),
         stmt.false_branch and self:stmt(stmt.false_branch, true)
-    })
+    }
 end
 
 irc[ET.Loop] = function(self, stmt)
-    self:emit({ IR.LOOP, self:stmt(stmt[2], true) })
+    return { IR.LOOP, self:stmt(stmt[2], true) }
 end
 
 irc[ET.While] = function(self, stmt)
@@ -211,16 +261,27 @@ irc[ET.While] = function(self, stmt)
         branch[i+1] = branch[i]
     end
     branch[1] = inst({ IR.IF, inst({ IR.NOT, self:expr(stmt.cond) }), { inst({ IR.BREAK }) } })
-    self:emit({ IR.LOOP, branch })
+    return { IR.LOOP, branch }
+end
+
+irc[ET.Lambda] = function(self, stmt)
+    local irc, n = self:closure(stmt.args)
+    for i, v in ipairs(stmt.stmts) do
+        irc:stmt(v)
+    end
+    local code = { IR.CLOSURE, n }
+    for i, v in ipairs(irc.upvals) do
+        code[i+2] = inst({ v.upval and IR.GETUPVAL or IR.GETLOCAL, v.i })
+    end
+    return code
 end
 
 irc[T.Name] = function(self, tok)
-    local r = self:resolve(tok.name)
+    local ir, r = self:resolve(tok.name)
     if r == -1 then
-        return { IR.GETGLOBAL, self:constant(tok.name) }
-    else
-        return { IR.GETLOCAL, r }
+        r = self:constant(tok.name)
     end
+    return { ir, r }
 end
 
 irc[T.Number] = function(self, v)
@@ -315,12 +376,11 @@ end
 irc["="] = function(self, expr)
     local target = expr[2]
     if target.type == T.Name then
-        local r = self:resolve(target.name)
+        local ir, r = self:resolve(target.name, true)
         if r == -1 then
-            return { IR.SETGLOBAL, self:constant(target.name), self:expr(expr[3]) }
-        else
-            return { IR.SETLOCAL, r, self:expr(expr[3]) }
+            r = self:constant(target.name)
         end
+        return { ir, r, self:expr(expr[3]) }
     else
         local ll = self:expr(target.from)
         local lr

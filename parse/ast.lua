@@ -27,11 +27,15 @@ local function token(tbl)
     return setmetatable(tbl, token_meta)
 end
 
+-- this was originally called ET to mean "Expression Types",
+-- but it does also now (mostly) contain types of statements.
 local ET = enum({
     "Call",
     "Namecall",
     "NameIndex",
     "ExprIndex",
+    "OperAssign",
+    "Lambda",
     "Return",
     "Expression",
     "Declare",
@@ -86,6 +90,9 @@ local ET_tostring = {
     end,
     [ET.Return] = function(expr, lvl)
         return { "Return", tostr(expr[2], lvl) }
+    end,
+    [ET.OperAssign] = function(expr, lvl)
+        return { "OperAssign", tostr(expr[2], lvl), tostr(expr[3], lvl), tostr(expr[4], lvl) }
     end,
     [ET.Expression] = function(expr, lvl)
         return { "Expression", tostr(expr[2], lvl) }
