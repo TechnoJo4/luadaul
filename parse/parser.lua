@@ -46,6 +46,21 @@ local function right(parser, token, left, prec)
     return expr({ token, left, parser:expr(prec - 1) })
 end
 
+local function match(lexer, ttype)
+    local i = 1
+    local token = lexer.get(i)
+    if ttype ~= T.Newline then
+        while token.type == T.Newline do
+            token = lexer.get(i)
+            i = i + 1
+        end
+    end
+    if token.type == ttype then
+        return lexer.adv(i)
+    end
+    return false
+end
+
 local function consume(lexer, ttype)
     local token = lexer.adv()
     if ttype ~= T.Newline then
@@ -54,31 +69,16 @@ local function consume(lexer, ttype)
         end
     end
     if token.type ~= ttype then
-        print(token)
+        print("prev", lexer.get(-1), "cur", token, "expected", ttype)
         error("error (consume)") -- TODO: error
     end
     return token
 end
 
-local function match(lexer, ttype)
-    local token = lexer.get(1)
-    if ttype ~= T.Newline then
-        local i = 2
-        while token.type == T.Newline do
-            token = lexer.get(i)
-            i = i + 1
-        end
-    end
-    if token.type == ttype then
-        return lexer.adv()
-    end
-    return false
-end
-
 local function consume_end(lexer)
     local token = lexer.adv()
     if token.type ~= T.Newline and token.type ~= T.Semi then
-        print(token)
+        print("prev", lexer.get(-1), "cur", token)
         error("error (consume_end)") -- TODO: error
     end
     return token
@@ -197,9 +197,8 @@ function new_parser(source)
             end
         end
 
-        -- expression body should return expression value
-        if #stmts == 1 then
-            local s = stmts[1]
+        if #stmts >= 1 then
+            local s = stmts[#stmts]
             if s[1] == ET.Expression then
                 s[1] = ET.Return
             end
@@ -295,12 +294,14 @@ function new_parser(source)
         return e
     end)
 
-    self:def_stmt(T.Let, function(parser, token)
+    self:def_stmt(T.Let, function(parser, token, no_end)
         -- TODO: function declaration
         local name = consume(parser.lexer, T.Name)
         consume_oper(parser.lexer, "=")
         local value = parser:expr()
-        consume_end(parser.lexer)
+        if not no_end then
+            consume_end(parser.lexer)
+        end
         return expr({ ET.Declare, name=name, value=value })
     end)
 
@@ -314,9 +315,11 @@ function new_parser(source)
         return expr({ ET.Block, stmts=stmts })
     end)
 
-    self:def_stmt(T.Return, function(parser, token)
+    self:def_stmt(T.Return, function(parser, token, no_end)
         local e = parser:expr()
-        consume_end(parser.lexer)
+        if not no_end then
+            consume_end(parser.lexer)
+        end
         return expr({ ET.Return, e })
     end)
 
@@ -325,7 +328,7 @@ function new_parser(source)
         return parser:stmt(true)
     end)
 
-    self:def_stmt(T.If, function(parser, token)
+    self:def_stmt(T.If, function(parser, token, no_end)
         local s = expr({ ET.If })
         consume(parser.lexer, T.LPar)
         s.cond = parser:expr()
@@ -334,11 +337,13 @@ function new_parser(source)
         if match(parser.lexer, T.Else) then
             s.false_branch = parser:stmt(true)
         end
-        consume_end(parser.lexer)
+        if not no_end then
+            consume_end(parser.lexer)
+        end
         return s
     end)
 
-    self:def_stmt(T.While, function(parser, token)
+    self:def_stmt(T.While, function(parser, token, no_end)
         local s = expr({ ET.While })
         consume(parser.lexer, T.LPar)
         s.cond = parser:expr()
@@ -347,7 +352,7 @@ function new_parser(source)
         return s
     end)
 
-    self:def_stmt(T.Loop, function(parser, token)
+    self:def_stmt(T.Loop, function(parser, token, no_end)
         return expr({ ET.Loop, parser:stmt(true) })
     end)
 
@@ -358,20 +363,19 @@ function new_parser(source)
     return self
 end
 
-function parser:stmt(allow_block, no_expr_end)
-    local token = self.lexer.get(1)
+function parser:stmt(allow_block, no_end)
+    local token = self.lexer.adv()
     while token.type == T.Newline do
-        self.lexer.adv()
-        token = self.lexer.get(1)
+        token = self.lexer.adv()
     end
     local func = self.stmts[token.type]
     local stmt
     if func and (allow_block or token.type ~= T.LBrace) then
-        self.lexer.adv()
-        stmt = func(self, token)
+        stmt = func(self, token, no_end)
     else
+        self.lexer.recede(1)
         stmt = expr({ ET.Expression, self:expr() })
-        if not no_expr_end then
+        if not no_end then
             consume_end(self.lexer)
         end
     end

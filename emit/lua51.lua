@@ -172,7 +172,7 @@ local function chunk(data)
         .. list(data.protos)
         .. list({}) -- linedata (debug, optional)
         .. list({}) -- locals (debug, optional)
-        .. list({}) -- upvalues (debug, optional)
+        .. list(data.upvals) -- debug, optional
 end
 
 local compiler = { cond={} }
@@ -182,12 +182,16 @@ local function new_compiler(irc, x64)
     local self = setmetatable({
         name=nil, startline=0, endline=0, is_vararg=0,
         nupvals=irc.nupvals, nparams=irc.nparams, maxstack=0,
-        ninsts=0, code={}, constants={}, protos={},
+        ninsts=0, code={}, constants={}, protos={}, upvals={},
         irc=irc, scopedepth=0, regs={}, x64=x64
     }, { __index=compiler })
 
     for k,v in pairs(irc.protos) do
         self.protos[k] = new_compiler(v, x64):compile_chunk()
+    end
+
+    for k,v in pairs(irc.upvals) do
+        self.upvals[k] = str(v.name, size_t)
     end
 
     for k,v in pairs(irc.constants) do
@@ -284,13 +288,13 @@ function compiler:reg(r, v)
     error("Could not allocate register")
 end
 
-function compiler:RK(ir)
+function compiler:RK(ir, ...)
     if type(ir) == "number" then
         return "", bit.bor(256, ir)
     elseif ir[1] == IR.CONST then
         return "", bit.bor(256, ir[2])
     else
-        return self:compile(ir)
+        return self:compile(ir, ...)
     end
 end
 
@@ -351,7 +355,7 @@ compiler[IR.IF] = function(self, v)
     local t = self:compile_all(v[3])
     local jmp = is_jmp(t)
     local cond = self:compile_cond(v[2], false, jmp)
-    local len = #t / 4
+    local len = #t / 4 + 1
     if v[4] then
         local f = self:compile_all(v[4])
         t = t..o.JMP(0, #f / 4)..f
@@ -456,8 +460,11 @@ compiler[IR.CONCAT] = function(self, v, r)
             if self.regs[r+i-2] then
                 move = r
                 r = self:reg()
+                break
             end
         end
+    else
+        r = self:reg()
     end
 
     local bc = {}

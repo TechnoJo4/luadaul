@@ -48,30 +48,35 @@ local function inst(v)
     return setmetatable(v, inst_meta)
 end
 
+local function irc_tostr(self, lvl) -- for debug logging
+    lvl = lvl or 0
+
+    local protos = {}
+    for k,v in pairs(self.protos) do
+        protos[k] = irc_tostr(v, lvl+1)
+    end
+    local constants = {}
+    for k,v in pairs(self.constants) do
+        constants[v+1] = tostring(k)
+    end
+    local ir = {}
+    for k,v in pairs(self.ir) do
+        ir[k] = "    "..tostring(v)
+    end
+
+    if #protos > 0 then
+        protos[#protos] = protos[#protos].."\n"
+    end
+    local indent = "\n"..("    "):rep(lvl)
+    local _s = "Prototypes: ["..table.concat(protos, ",")
+            .. "],\nConstants: ["..table.concat(constants, ", ")
+            .. "],\nCode: [\n"..table.concat(ir, "\n") .. "\n]"
+    return indent.._s:gsub("\n", indent)
+end
+
 -- IR "compiler"
 local irc = {}
-local irc_meta = {
-    __index=irc,
-    __tostring=function(self, lvl) -- for debug logging
-        local protos = {}
-        for k,v in pairs(self.protos) do
-            protos[k] = "\n"..tostring(v)
-        end
-        local constants = {}
-        for k,v in pairs(self.constants) do
-            constants[v+1] = tostring(k)
-        end
-        local ir = {}
-        for k,v in pairs(self.ir) do
-            ir[k] = tostring(v)
-        end
-
-        return "Prototypes: ["..table.concat(protos, ",")
-            .. "],\nConstants: ["..table.concat(constants, ", ")
-            .. "],\nCode: [\n"..table.concat(ir, "\n")
-            .. "\n]"
-    end
-}
+local irc_meta = { __index=irc, __tostring=irc_tostr }
 local function new_irc(parent, args)
     local nparams = args and #args or 0
     local self = setmetatable({
@@ -230,10 +235,15 @@ end
 irc[ET.Block] = function(self, stmt)
     local c = {}
     self:start_scope()
-    for _,v in ipairs(stmt.stmts) do
-        c[#c+1] = self:stmt(v)
+    local i = 1
+    for _,stmt in ipairs(stmt.stmts) do
+        local ir = { self:stmt(stmt, true) }
+        for _,v in ipairs(ir) do
+            c[i] = v
+            i = i + 1
+        end
     end
-    c[#c+1] = self:end_scope()
+    c[i] = self:end_scope()
     return unpack(c)
 end
 
@@ -246,17 +256,17 @@ irc[ET.If] = function(self, stmt)
     return {
         IR.IF,
         self:expr(stmt.cond),
-        self:stmt(stmt.true_branch, true),
-        stmt.false_branch and self:stmt(stmt.false_branch, true)
+        { self:stmt(stmt.true_branch, true) },
+        stmt.false_branch and { self:stmt(stmt.false_branch, true) }
     }
 end
 
 irc[ET.Loop] = function(self, stmt)
-    return { IR.LOOP, self:stmt(stmt[2], true) }
+    return { IR.LOOP, { self:stmt(stmt[2], true) } }
 end
 
 irc[ET.While] = function(self, stmt)
-    local branch = self:stmt(stmt.branch, true)
+    local branch = { self:stmt(stmt.branch, true) }
     for i=#branch,1,-1 do
         branch[i+1] = branch[i]
     end
@@ -347,6 +357,8 @@ irc[".."] = function(self, expr)
         for i=2,#rhs do
             ir[i+1] = rhs[i]
         end
+    else
+        ir[3] = rhs
     end
     return ir
 end
