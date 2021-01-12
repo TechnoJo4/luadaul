@@ -3,6 +3,8 @@ local parse = require("parse.parser")
 local ir = require("emit.ir")
 local lua51 = require("emit.lua51")
 
+setmetatable(_G, { __newindex=function(_, k) error("tried to create global", k) end })
+
 -- warning: this is horrible
 -- todo: make this mess not a mess
 if process.argv[2] then

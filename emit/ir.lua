@@ -91,8 +91,8 @@ function irc:end_scope()
     local locals = self.locals
     local code = {}
     if self.nlocals[depth] > 0 then
-        close = { IR.CLOSE }
-        pop = { IR.POP }
+        local close = { IR.CLOSE }
+        local pop = { IR.POP }
 
         for _=1,self.nlocals[depth] do
             local l = locals[#locals]
