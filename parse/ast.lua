@@ -32,6 +32,7 @@ end
 local ET = enum({
     "Call",
     "Namecall",
+    "Conditional",
     "NameIndex",
     "ExprIndex",
     "OperAssign",
@@ -118,6 +119,14 @@ local ET_tostring = {
             "cond="..tostr(expr.cond, lvl),
             "true="..tostr(expr.true_branch, lvl),
             expr.false_branch and "false="..tostr(expr.false_branch, lvl)
+        }
+    end,
+    [ET.Conditional] = function(expr, lvl)
+        return {
+            "Conditional",
+            "cond="..tostr(expr.cond, lvl),
+            "true="..tostr(expr.true_branch, lvl),
+            "false="..tostr(expr.false_branch, lvl)
         }
     end,
     [ET.While] = function(expr, lvl)

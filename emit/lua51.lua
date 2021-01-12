@@ -3,9 +3,11 @@
 local bit = require("bit")
 local ffi = require("ffi")
 local irc = require("emit.ir")
+local base = require("emit.base")
+local same = base.same
 local IR = irc.IR
 
-local PUSH = setmetatable({}, { __tostring=function() return "PUSH" end })
+local PUSH = base.PUSH
 
 -- TODO: support non-luajit?
 -- i should probably find a safer way to do this anyways
@@ -159,7 +161,13 @@ local function list(tbl, size)
     return i32(size)..table.concat(tbl, "")
 end
 
+local DEBUG_IPLINES = true
 local function chunk(data)
+    if DEBUG_IPLINES then
+        for i=0,data.ninsts do
+            data.linedata[i] = i32(i)
+        end
+    end
     return str(data.name, data.x64 and i64 or i32)
         .. i32(data.startline)
         .. i32(data.endline)
@@ -170,19 +178,20 @@ local function chunk(data)
         .. list(data.code, data.ninsts)
         .. list(data.constants)
         .. list(data.protos)
-        .. list({}) -- linedata (debug, optional)
+        .. list(data.linedata) -- linedata (debug, optional)
         .. list({}) -- locals (debug, optional)
         .. list(data.upvals) -- debug, optional
 end
 
-local compiler = { cond={} }
+local compiler = setmetatable({ cond={} }, { __index=base.base })
 local function new_compiler(irc, x64)
     local size_t = x64 and i64 or i32
 
     local self = setmetatable({
         name=nil, startline=0, endline=0, is_vararg=0,
         nupvals=irc.nupvals, nparams=irc.nparams, maxstack=0,
-        ninsts=0, code={}, constants={}, protos={}, upvals={},
+        ninsts=0, code={}, constants={}, protos={},
+        upvals={}, linedata={},
         irc=irc, scopedepth=0, regs={}, x64=x64
     }, { __index=compiler })
 
@@ -195,11 +204,11 @@ local function new_compiler(irc, x64)
     end
 
     for k,v in pairs(irc.constants) do
-        local t = type(k)
+        local t = type(v)
         if t == "number" then
-            self.constants[v+1] = "\x03"..f64(k)
+            self.constants[k+1] = "\x03"..f64(v)
         elseif t == "string" then
-            self.constants[v+1] = "\x04"..str(k, size_t)
+            self.constants[k+1] = "\x04"..str(v, size_t)
         else
             error()
         end
@@ -227,7 +236,7 @@ function compiler:compile_cond(ir, tobool, invert, ...)
     end
     if tobool then
         if tobool == true then tobool = self:reg() end
-        code = code..o.JMP(0,1)..o.LOADBOOL(tobool, 0, 1)..o.LOADBOOL(tobool, 1, 0)
+        code = code..o.JMP(0,1)..o.LOADBOOL(tobool, 1, 1)..o.LOADBOOL(tobool, 0, 0)
     end
     return code, tobool
 end
@@ -237,7 +246,7 @@ function compiler:compile(ir, r, ...)
     local func = self[t]
     if not func then
         if self.cond[t] then
-            return self:compile_cond(self, ir, r or true, false, ...)
+            return self:compile_cond(ir, r or true, false, ...)
         else
             error(("No lua51 compile rule for %s"):format(ir[1])) -- TODO: error
         end
@@ -293,57 +302,21 @@ function compiler:RK(ir, ...)
         return "", bit.bor(256, ir)
     elseif ir[1] == IR.CONST then
         return "", bit.bor(256, ir[2])
+    elseif ir[1] == IR.GETLOCAL then
+        return "", ir[2]
     else
         return self:compile(ir, ...)
     end
 end
 
-local function same(a, b)
-    local t = a[1]
-    if b[1] ~= t then return false end
-
-    if t == IR.CONST then
-        return a[2] == b[2]
-    elseif t == IR.GETLOCAL then
-        return a[2] == b[2]
-    end
-
-    return false
-end
-
-compiler[IR.POP] = function(self, ir)
-    local bc = {}
+compiler[IR.CLOSE] = function(self, ir)
+    local min = 256
     for i=2,#ir do
-        if type(ir[i]) == "number" then
-            self:reg(ir[i], false)
-            bc[i-1] = ""
-        else
-            -- pushes are important allocations (i.e. locals),
-            -- they shouldn't be overriden with expressions (e.g. assignments),
-            -- which compile to IR.POP
-            local a, ra = self:compile(ir[i])
-            if self.regs[ra] ~= PUSH then
-                self:reg(ra, false)
-            end
-            bc[i-1] = a
-        end
+        local r = ir[i]
+        self:reg(r, false)
+        if min > r then min = r end
     end
-    return table.concat(bc, "")
-end
-
-compiler[IR.PUSH] = function(self, ir)
-    local bc = {}
-    for i=2,#ir do
-        if type(ir[i]) == "number" then
-            self:reg(ir[i], PUSH)
-            bc[i-1] = ""
-        else
-            local a, ra = self:compile(ir[i])
-            self:reg(ra, PUSH)
-            bc[i-1] = a
-        end
-    end
-    return table.concat(bc, "")
+    return o.CLOSE(min)
 end
 
 compiler[IR.RETURN] = function(self, v)
@@ -366,14 +339,29 @@ compiler[IR.IF] = function(self, v)
     return cond..t
 end
 
+compiler[IR.CONDITIONAL] = function(self, v, r)
+    r = r or self:reg()
+    local t = self:compile(v[3], r)
+    local f = self:compile(v[4], r)
+    return self:compile_cond(v[2], false, false)
+        .. o.JMP(0, #t / 4 + 1) .. t
+        .. o.JMP(0, #f / 4) .. f, r
+end
+
 compiler[IR.LOOP] = function(self, v)
     local code = self:compile_all(v[2], true)
+    local last = code:sub(-4, -1)
+    if getop(last) == 35 then -- CLOSE
+        code = code:sub(1, -5)
+    else
+        last = ""
+    end
     local len = #code / 4
     code = code..o.JMP(0, -len - 1)
     code = code:gsub("()\xFF\xFF\xFF\xFF", function(pos)
         return o.JMP(0, len - pos/4)
     end)
-    return code
+    return code..last
 end
 
 compiler[IR.BREAK] = function(self)
@@ -397,10 +385,13 @@ local function binop(inst)
             b, rb = self:RK(rhs)
         end
 
-        local s = a..b..inst(ra, ra, rb)
+        local s = a..b..inst(r, ra, rb)
 
         if ra ~= rb and shouldpop(self, rb) then
             self:reg(rb, false)
+        end
+        if r ~= ra and shouldpop(self, ra) then
+            self:reg(ra, false)
         end
         return s, ra
     end
@@ -428,22 +419,22 @@ compiler[IR.NIL] = function(self, v, r)
     return o.LOADNIL(r, r)
 end
 
-compiler[IR.CONST] = function(self, v, a)
-    a = a or self:reg()
-    return o.LOADK(a, v[2]), a
+compiler[IR.CONST] = function(self, v, r)
+    r = r or self:reg()
+    return o.LOADK(r, v[2]), r
 end
 
 local _closure_upval_ops = { [IR.GETUPVAL] = o.GETUPVAL, [IR.GETLOCAL] = o.MOVE }
-compiler[IR.CLOSURE] = function(self, v, a)
-    a = a or self:reg()
-    local bc = { o.CLOSURE(a, v[2]) }
+compiler[IR.CLOSURE] = function(self, v, r)
+    r = r or self:reg()
+    local bc = { o.CLOSURE(r, v[2]) }
     if #v > 2 then
         for i=3,#v do
             local ut, ui = unpack(v[i])
             bc[i-1] = _closure_upval_ops[ut](0, ui)
         end
     end
-    return table.concat(bc, ""), a
+    return table.concat(bc, ""), r
 end
 
 compiler[IR.ADD] = binop(o.ADD)
@@ -571,10 +562,9 @@ compiler[IR.CALL] = function(self, v, a)
     local bc = { target }
     if #v > 3 then
         for i=4,#v do
-            local j = i - 3
-            local code, r = self:compile(v[i], self:reg(a + j))
-            bc[j + 1] = code
-            b = j + 1
+            local code, r = self:compile(v[i], self:reg(a + i - 3))
+            bc[i - 2] = code
+            b = i - 2
             nargs = nargs + 1
         end
     end
@@ -587,17 +577,17 @@ compiler[IR.CALL] = function(self, v, a)
 end
 
 compiler[IR.NAMECALL] = function(self, v, a)
-    a = a or self:reg()
-    local from = self:compile(v[2], a + 1)
-    local target = o.GETTABLE(a, a + 1, bit.bor(256, v[3]))
+    local from, b = self:compile(v[2], a)
+    local target = o.SELF(b, b, bit.bor(256, v[3]))
+    self:reg(b + 1)
     local b, nargs = 2, 1
     local bc = { from, target }
     if #v > 4 then
         for i=5,#v do
-            local j = i - 3
-            local code, r = self:compile(v[i], self:reg(a + j))
-            bc[j + 1] = code
-            b = j + 1
+            local code, r = self:compile(v[i], self:reg(a + i - 3))
+            bc[i - 2] = code
+            b = i - 2
+            nargs = nargs + 1
         end
     end
     local nrets = v[4]

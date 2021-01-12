@@ -138,6 +138,17 @@ function new_parser(source)
     self:def_post("%", P.Multiplication, left, true)
     self:def_post("^", P.Power, right, true)
 
+    self:def_pre(T.If, function(parser, token)
+        local s = expr({ ET.Conditional })
+        consume(parser.lexer, T.LPar)
+        s.cond = parser:expr()
+        consume(parser.lexer, T.RPar)
+        s.true_branch = parser:expr()
+        consume(parser.lexer, T.Else)
+        s.false_branch = parser:expr()
+        return s
+    end)
+
     local _assignables = enum({ ET.ExprIndex, ET.NameIndex, T.Name })
     self:def_post("=", P.Assignment, function(parser, token, left, prec)
         local t = left.type or left[1].type

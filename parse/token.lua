@@ -23,7 +23,13 @@ return require("parse.utils").enum({
     "Nil",
     "True",
     "False",
-    "If", "Else", "Do", "While", "Loop", "Break",
+    "If",
+    "Else",
+    "Do",
+    "While",
+    "Loop",
+    "For",
+    "Break",
     "Error",
     "EOF"
 }, true)

@@ -9,9 +9,9 @@ local function chrtbl(str)
     return tbl
 end
 
--- param bi is "bi-directional" 
--- by default, enum is a fun({ [TK]: TV }) -> { [TV]: TK },
--- bi=true makes the return type { [TV]: TK, [TK]: TV },
+-- bi: "bi-directional" 
+-- by default, enum is a fun({ [TK]: TV }) -> { [TV]: TK_ },
+-- bi=true makes the return type { [TV]: TK_, [TK_]: TV },
 -- keeping the old indicies
 local function enum(tbl, bi)
     local new = {}
