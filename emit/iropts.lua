@@ -1,5 +1,6 @@
 local IR = require("emit.irinsts")
 
+-- http://wiki.luajit.org/Optimizations
 local fold = {
     [IR.ADD] = function(a, b) return a + b end,
     [IR.SUB] = function(a, b) return a - b end,

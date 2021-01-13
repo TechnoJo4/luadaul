@@ -18,6 +18,7 @@ local keywords = {
     ["do"] = T.Do,
     ["while"] = T.While,
     ["loop"] = T.Loop,
+    ["for"] = T.For,
     ["break"] = T.Break,
     ["true"] = T.True,
     ["false"] = T.False,

@@ -253,17 +253,30 @@ irc[ET.If] = function(self, stmt)
     }
 end
 
+irc[ET.ForNum] = function(self, stmt)
+    local start = self:expr(stmt.start)
+    local stop = self:expr(stmt.stop)
+    local step = stmt.step and self:expr(stmt.step) or self:constant(1, true)
+
+    self:declare(stmt.name.name)
+    local stmts = { self:stmt(stmt.loop, true) }
+    self.locals[#self.locals] = nil
+    self.nlocals[self.depth] = self.nlocals[self.depth] - 1
+
+    return { IR.NUMFOR, start, stop, step, stmts }
+end
+
 irc[ET.Loop] = function(self, stmt)
     return { IR.LOOP, { self:stmt(stmt[2], true) } }
 end
 
 irc[ET.While] = function(self, stmt)
-    local branch = { self:stmt(stmt.branch, true) }
-    for i=#branch,1,-1 do
-        branch[i+1] = branch[i]
+    local loop = { self:stmt(stmt.loop, true) }
+    for i=#loop,1,-1 do
+        loop[i+1] = loop[i]
     end
-    branch[1] = self:inst({ IR.IF, self:inst({ IR.NOT, self:expr(stmt.cond) }), { self:inst({ IR.BREAK }) } })
-    return { IR.LOOP, branch }
+    loop[1] = self:inst({ IR.IF, self:inst({ IR.NOT, self:expr(stmt.cond) }), { self:inst({ IR.BREAK }) } })
+    return { IR.LOOP, loop }
 end
 
 irc[ET.Lambda] = function(self, stmt)

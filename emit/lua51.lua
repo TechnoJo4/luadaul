@@ -92,6 +92,7 @@ local opcodes = {
     [37] = "VARARG" -- A B     R(A), R(A+1), ..., R(A+B-1) = vararg
     -- "63" (instruction 0xffffffff) is a placeholder made by break that compiles to JMP
 }
+
 --[[
     R(x) - register
     Kst(x) - constant (in constant table)
@@ -192,7 +193,8 @@ local function new_compiler(irc, x64)
         nupvals=irc.nupvals, nparams=irc.nparams, maxstack=0,
         ninsts=0, code={}, constants={}, protos={},
         upvals={}, linedata={},
-        irc=irc, scopedepth=0, regs={}, x64=x64
+        irc=irc, scopedepth=0, regs={}, x64=x64,
+        local_offsets={},
     }, { __index=compiler })
 
     for k,v in pairs(irc.protos) do
@@ -343,7 +345,7 @@ compiler[IR.CONDITIONAL] = function(self, v, r)
     r = r or self:reg()
     local t = self:compile(v[3], r)
     local f = self:compile(v[4], r)
-    return self:compile_cond(v[2], false, false)
+    return self:compile_cond(v[2])
         .. o.JMP(0, #t / 4 + 1) .. t
         .. o.JMP(0, #f / 4) .. f, r
 end
@@ -362,6 +364,31 @@ compiler[IR.LOOP] = function(self, v)
         return o.JMP(0, len - pos/4)
     end)
     return code..last
+end
+
+compiler[IR.NUMFOR] = function(self, v)
+    local r0 = self:reg()
+    local prep = self:compile(v[2], r0)
+            .. self:compile(v[3], self:reg(r0+1))
+            .. self:compile(v[4], self:reg(r0+2))
+
+    local lv = self:reg(r0+3, PUSH)
+    local off = self.local_offsets
+    off[#off+1] = { r0, 3 }
+
+    local code = self:compile_all(v[5], true)
+    local len = #code / 4
+    code = prep..o.FORPREP(r0, len)..code..o.FORLOOP(r0, -len - 1)
+    code = code:gsub("()\xFF\xFF\xFF\xFF", function(pos)
+        return o.JMP(0, len - pos/4)
+    end)
+
+    self:reg(r0, false)
+    self:reg(r0+1, false)
+    self:reg(r0+2, false)
+    self:reg(r0+3, false)
+    off[#off] = nil
+    return code
 end
 
 compiler[IR.BREAK] = function(self)
@@ -511,6 +538,15 @@ compiler.cond[IR.LTEQ] = bincmp(o.LE)
 compiler.cond[IR.GT] = bincmp(o.LT, true)
 compiler.cond[IR.GTEQ] = bincmp(o.LE, true)
 
+function compiler:localreg(idx)
+    for i=1,#self.local_offsets do
+        local o = self.local_offsets[i]
+        if o[1] > idx then break end
+        idx = idx + o[2]
+    end
+    return idx
+end
+
 compiler[IR.GETGLOBAL] = function(self, v, a)
     a = a or self:reg()
     return o.GETGLOBAL(a, v[2]), a
@@ -523,9 +559,9 @@ end
 
 compiler[IR.GETLOCAL] = function(self, v, r)
     if not r then
-        return "", v[2]
+        return "", self:localreg(v[2])
     else
-        return o.MOVE(r, v[2]), r
+        return o.MOVE(r, self:localreg(v[2])), r
     end
 end
 
@@ -535,11 +571,12 @@ compiler[IR.GETUPVAL] = function(self, v, r)
 end
 
 compiler[IR.SETLOCAL] = function(self, v, r)
-    if not r or r == v[2] then
-        return self:compile(v[3], v[2])
+    local n = self:localreg(v[2])
+    if not r or r == n then
+        return self:compile(v[3], n)
     else
         local code, a = self:compile(v[3], r)
-        return code..o.MOVE(v[2], r), r
+        return code..o.MOVE(n, r), r
     end
 end
 

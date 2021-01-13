@@ -335,7 +335,6 @@ function new_parser(source)
     end)
 
     self:def_stmt(T.Do, function(parser, token)
-        -- TODO: parse do {} while (cond) loops
         return parser:stmt(true)
     end)
 
@@ -359,7 +358,25 @@ function new_parser(source)
         consume(parser.lexer, T.LPar)
         s.cond = parser:expr()
         consume(parser.lexer, T.RPar)
-        s.branch = parser:stmt(true)
+        s.loop = parser:stmt(true)
+        return s
+    end)
+
+    self:def_stmt(T.For, function(parser, token)
+        -- TODO: parse iterator (for-in) loops
+        local s = expr({ ET.ForNum })
+        consume(parser.lexer, T.LPar)
+        s.name = consume(parser.lexer, T.Name)
+        consume_oper(parser.lexer, "=")
+        s.start = parser:expr()
+        consume(parser.lexer, T.Comma)
+        s.stop = parser:expr()
+        if match(parser.lexer, T.Comma) then
+            s.step = parser:expr()
+        end
+        consume(parser.lexer, T.RPar)
+
+        s.loop = parser:stmt(true)
         return s
     end)
 

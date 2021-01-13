@@ -16,6 +16,6 @@ return require("parse.utils").enum({
     "RETURN",
     "POP", "PUSH", "CLOSE",
     "CONDITIONAL",
-    "LOOP", "IF", "BREAK",
+    "LOOP", "NUMFOR", "IF", "BREAK",
     "CLOSURE"
 }, true)

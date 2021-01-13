@@ -44,6 +44,8 @@ local ET = enum({
     "If",
     "While",
     "Loop",
+    "ForNum",
+    "ForIter",
     "Break",
 }, true)
 
