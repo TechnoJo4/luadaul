@@ -90,7 +90,7 @@ local opcodes = {
     [35] = "CLOSE", -- A       close all variables in the stack up to (>=) R(A)
     [36] = "CLOSURE", -- A Bx    R(A) := closure(KPROTO[Bx], R(A), ... ,R(A+n))
     [37] = "VARARG" -- A B     R(A), R(A+1), ..., R(A+B-1) = vararg
-    -- "63" (instruction 0xffffffff) is a placeholder made by break that compiles to JMP
+    -- "63" (instruction 0xffffffff) is a placeholder made by break that gets replaced by JMP
 }
 
 --[[
@@ -218,6 +218,10 @@ local function new_compiler(irc, x64)
     return self
 end
 
+local function shouldpop(self, r)
+    return r < 255 and self.regs[r] ~= PUSH
+end
+
 -- tobool: convert to boolean
 -- invert: skip next if false instead of skip next if true
 function compiler:compile_cond(ir, tobool, invert, ...)
@@ -229,7 +233,10 @@ function compiler:compile_cond(ir, tobool, invert, ...)
         if self[t] then
             local r
             code, r = self[t](self, ir, r, ...)
-            code = code..o.TEST(r, invert and 1 or 0)
+            code = code..o.TEST(r, 0, invert and 1 or 0)
+            if shouldpop(self, r) then
+                self:reg(r, false)
+            end
         else
             error(("No lua51 compile rule for %s"):format(ir[1])) -- TODO: error
         end
@@ -243,7 +250,9 @@ function compiler:compile_cond(ir, tobool, invert, ...)
     return code, tobool
 end
 
+local DEBUG_IR = false
 function compiler:compile(ir, r, ...)
+    if DEBUG_IR then print(ir) end
     local t = ir[1]
     local func = self[t]
     if not func then
@@ -323,6 +332,9 @@ end
 
 compiler[IR.RETURN] = function(self, v)
     local a, ra = self:compile(v[2])
+    if shouldpop(self, ra) then
+        self:reg(ra, false)
+    end
     return a..o.RETURN(ra, 2)
 end
 
@@ -330,10 +342,11 @@ compiler[IR.IF] = function(self, v)
     local t = self:compile_all(v[3])
     local jmp = is_jmp(t)
     local cond = self:compile_cond(v[2], false, jmp)
-    local len = #t / 4 + 1
+    local len = #t / 4
     if v[4] then
         local f = self:compile_all(v[4])
         t = t..o.JMP(0, #f / 4)..f
+        len = len + 1
     end
     if not jmp then
         cond = cond..o.JMP(0, len)
@@ -372,7 +385,7 @@ compiler[IR.NUMFOR] = function(self, v)
             .. self:compile(v[3], self:reg(r0+1))
             .. self:compile(v[4], self:reg(r0+2))
 
-    local lv = self:reg(r0+3, PUSH)
+    self:reg(r0+3, PUSH)
     local off = self.local_offsets
     off[#off+1] = { r0, 3 }
 
@@ -391,6 +404,30 @@ compiler[IR.NUMFOR] = function(self, v)
     return code
 end
 
+compiler[IR.ITERFOR] = function(self, v)
+    local r0 = self:reg()
+    local prep = self:compile(v[2], r0)
+
+    for i=1,v[3] do
+        self:reg(r0+2+i, PUSH)
+    end
+    local off = self.local_offsets
+    self.local_offsets[#self.local_offsets+1] = { r0, 3 }
+
+    local code = self:compile_all(v[4], true)
+    local len = #code / 4
+    code = prep..o.JMP(0, len)..code..o.TFORLOOP(r0, 0, v[3])..o.JMP(0, -(2 + len))
+    code = code:gsub("()\xFF\xFF\xFF\xFF", function(pos)
+        return o.JMP(0, len - pos/4 + 1)
+    end)
+
+    for i=0,v[3]+2 do
+        self:reg(r0+i, false)
+    end
+    self.local_offsets[#self.local_offsets] = nil
+    return code
+end
+
 compiler[IR.BREAK] = function(self)
     if not self.breaks then
         error("break not allowed outside loops") -- TODO: error
@@ -398,9 +435,6 @@ compiler[IR.BREAK] = function(self)
     return "\xFF\xFF\xFF\xFF"
 end
 
-local function shouldpop(self, r)
-    return r < 255 and self.regs[r] ~= PUSH
-end
 local function binop(inst)
     return function(self, v, r)
         local lhs, rhs = v[2], v[3]
@@ -504,7 +538,7 @@ end
 compiler[IR.UNM] = unop(o.UNM)
 compiler[IR.LEN] = unop(o.LEN)
 compiler.cond[IR.NOT] = function(self, v, invert)
-    return self:compile_cond(v[2], not invert)
+    return self:compile_cond(v[2], false, not invert)
 end
 
 local function bincmp(inst, swap)
@@ -541,8 +575,9 @@ compiler.cond[IR.GTEQ] = bincmp(o.LE, true)
 function compiler:localreg(idx)
     for i=1,#self.local_offsets do
         local o = self.local_offsets[i]
-        if o[1] > idx then break end
-        idx = idx + o[2]
+        if idx >= o[1] then
+            idx = idx + o[2]
+        end
     end
     return idx
 end
@@ -558,10 +593,11 @@ compiler[IR.SETGLOBAL] = function(self, v, a)
 end
 
 compiler[IR.GETLOCAL] = function(self, v, r)
+    local l = self:localreg(v[2])
     if not r then
-        return "", self:localreg(v[2])
+        return "", l
     else
-        return o.MOVE(r, self:localreg(v[2])), r
+        return o.MOVE(r, l), r
     end
 end
 
@@ -590,6 +626,13 @@ compiler[IR.GETTABLE] = function(self, v, ra)
     local c, rc = self:RK(v[3])
     ra = ra or rb
     return b..c..o.GETTABLE(ra, rb, rc), ra
+end
+
+compiler[IR.SETTABLE] = function(self, v, ra)
+    local a, ra = self:compile(v[2])
+    local b, rb = self:RK(v[3])
+    local c, rc = self:RK(v[4])
+    return a..b..c..o.SETTABLE(ra, rb, rc), ra
 end
 
 compiler[IR.CALL] = function(self, v, a)
@@ -632,7 +675,7 @@ compiler[IR.NAMECALL] = function(self, v, a)
     for i=0,max-1 do
         self.regs[a+i] = i < nrets
     end
-    return table.concat(bc, "")..o.CALL(a, b, v[3]+1), a
+    return table.concat(bc, "")..o.CALL(a, b, v[4]+1), a
 end
 
 function compiler:compile_chunk()

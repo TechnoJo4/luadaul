@@ -1,7 +1,7 @@
 local ast = require("parse.ast")
-local utils = require("parse.utils")
 local lexer = require("parse.lexer")
 local stream = require("parse.stream")
+local utils = require("common.utils")
 
 local enum = utils.enum
 local T = lexer.token_types
@@ -51,8 +51,8 @@ local function match(lexer, ttype)
     local token = lexer.get(i)
     if ttype ~= T.Newline then
         while token.type == T.Newline do
-            token = lexer.get(i)
             i = i + 1
+            token = lexer.get(i)
         end
     end
     if token.type == ttype then
@@ -151,9 +151,10 @@ function new_parser(source)
 
     local _assignables = enum({ ET.ExprIndex, ET.NameIndex, T.Name })
     self:def_post("=", P.Assignment, function(parser, token, left, prec)
-        local t = left.type or left[1].type
+        local t = left.type or left[1].type or left[1]
         if not _assignables[t == T.Oper and left[1].oper or t] then
             -- TODO: error
+            print(left, t)
             error("Invalid assignment target")
         end
 
@@ -345,7 +346,7 @@ function new_parser(source)
         consume(parser.lexer, T.RPar)
         s.true_branch = parser:stmt(true, true)
         if match(parser.lexer, T.Else) then
-            s.false_branch = parser:stmt(true)
+            s.false_branch = parser:stmt(true, true)
         end
         if not no_end then
             consume_end(parser.lexer)
@@ -358,26 +359,45 @@ function new_parser(source)
         consume(parser.lexer, T.LPar)
         s.cond = parser:expr()
         consume(parser.lexer, T.RPar)
-        s.loop = parser:stmt(true)
+        s.body = parser:stmt(true)
         return s
     end)
 
     self:def_stmt(T.For, function(parser, token)
-        -- TODO: parse iterator (for-in) loops
-        local s = expr({ ET.ForNum })
         consume(parser.lexer, T.LPar)
-        s.name = consume(parser.lexer, T.Name)
-        consume_oper(parser.lexer, "=")
-        s.start = parser:expr()
-        consume(parser.lexer, T.Comma)
-        s.stop = parser:expr()
-        if match(parser.lexer, T.Comma) then
-            s.step = parser:expr()
-        end
-        consume(parser.lexer, T.RPar)
+        local name = consume(parser.lexer, T.Name)
+        local comma = match(parser.lexer, T.Comma)
 
-        s.loop = parser:stmt(true)
-        return s
+        if comma then
+            name = { name }
+            repeat
+                name[#name+1] = consume(parser.lexer, T.Name)
+            until not match(parser.lexer, T.Comma)
+            consume(parser.lexer, T.In)
+        end
+
+        if comma or match(parser.lexer, T.In) then
+            local s = expr({ ET.ForIter })
+            if not comma then name = { name } end
+            s.names = name
+            s.iter = parser:expr() -- TODO: that thing
+            consume(parser.lexer, T.RPar)
+
+            s.body = parser:stmt(true)
+            return s
+        else
+            local s = expr({ ET.ForNum })
+            s.start = parser:expr()
+            consume(parser.lexer, T.Comma)
+            s.stop = parser:expr()
+            if match(parser.lexer, T.Comma) then
+                s.step = parser:expr()
+            end
+            consume(parser.lexer, T.RPar)
+
+            s.body = parser:stmt(true)
+            return s
+        end
     end)
 
     self:def_stmt(T.Loop, function(parser, token, no_end)
@@ -411,7 +431,7 @@ function parser:stmt(allow_block, no_end)
 end
 
 function parser:expr(prec)
-    if not prec then prec = 0 end
+    if not prec then prec = P.Assignment-1 end
 
     local token = self.lexer.adv()
     while token.type == T.Newline do
@@ -445,7 +465,7 @@ function parser:expr(prec)
         end
 
         local rule = self.post[idx]
-        if not rule or rule.prec <= prec or (i > 1 and not rule.skipnl) then break end
+        if not rule or rule.prec+0 <= prec+0 or (i > 1 and not rule.skipnl) then break end
 
         self.lexer.adv(i)
         left = rule.func(self, token, left, rule.prec)

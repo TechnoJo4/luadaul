@@ -1,5 +1,5 @@
 local T = require("parse.token")
-local utils = require("parse.utils")
+local utils = require("common.utils")
 local enum = utils.enum
 
 local token_meta = {

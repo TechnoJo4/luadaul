@@ -1,4 +1,4 @@
-return require("parse.utils").enum({
+return require("common.utils").enum({
     "NIL", "TRUE", "FALSE", "CONST",
     "GETTABLE", "SETTABLE",
     "GETLOCAL", "SETLOCAL",
@@ -16,6 +16,7 @@ return require("parse.utils").enum({
     "RETURN",
     "POP", "PUSH", "CLOSE",
     "CONDITIONAL",
-    "LOOP", "NUMFOR", "IF", "BREAK",
+    "IF", "BREAK",
+    "LOOP", "NUMFOR", "ITERFOR",
     "CLOSURE"
 }, true)

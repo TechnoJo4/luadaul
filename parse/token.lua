@@ -1,5 +1,5 @@
 -- types of tokens
-return require("parse.utils").enum({
+return require("common.utils").enum({
     "Oper",
     "Number",
     "String",
@@ -28,7 +28,7 @@ return require("parse.utils").enum({
     "Do",
     "While",
     "Loop",
-    "For",
+    "For", "In",
     "Break",
     "Error",
     "EOF"

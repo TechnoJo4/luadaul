@@ -34,6 +34,12 @@ local function irc_tostr(self, lvl) -- for debug logging
     for k,v in pairs(self.constvals) do
         constants[v+1] = tostring(k)
     end
+    local upvals = {}
+    for k,v in pairs(self.upvals) do
+        upvals[k] = "(name=" .. v.name
+            .. ", i=" .. tostring(v.i)
+            .. ", upval=" .. tostring(v.upval) .. ")"
+    end
     local ir = {}
     for k,v in pairs(self.ir) do
         ir[k] = "    "..tostring(v)
@@ -45,6 +51,7 @@ local function irc_tostr(self, lvl) -- for debug logging
     local indent = "\n"..("    "):rep(lvl)
     local _s = "Prototypes: ["..table.concat(protos, ",")
             .. "],\nConstants: ["..table.concat(constants, ", ")
+            .. "],\nUpvalues: ["..table.concat(upvals, ", ")
             .. "],\nCode: [\n"..table.concat(ir, "\n") .. "\n]"
     return indent.._s:gsub("\n", indent)
 end
@@ -73,7 +80,6 @@ local function new_irc(parent, args)
 end
 
 function irc:inst(v)
-    -- TODO: don't apply metatable on release builds
     return setmetatable(opts.inst(v, self), inst_meta)
 end
 
@@ -109,6 +115,19 @@ function irc:end_scope()
     return unpack(code)
 end
 
+function irc:declare(name)
+    local n = 0
+    for _,v in pairs(self.nlocals) do
+        n = n + v
+    end
+    if n >= 200 then
+        error("Too many locals")
+    end
+    self.nlocals[self.depth] = self.nlocals[self.depth] + 1
+    self.locals[#self.locals+1] = { name=name, i=#self.locals, close=false }
+    return #self.locals-1
+end
+
 function irc:resolve(name, set)
     for i=#self.locals,1,-1 do
         if self.locals[i].name == name then
@@ -122,13 +141,14 @@ function irc:resolve(name, set)
     end
     if self.parent then
         local ir, i = self.parent:resolve(name, set)
-        if i ~= -1 then
-            self.upvals[#self.upvals+1] = { name=name, i=i, upval=ir == (set and IR.SETUPVAL or IR.GETUPVAL) }
+        if i then
+            local ir2 = set and IR.SETUPVAL or IR.GETUPVAL
+            self.upvals[#self.upvals+1] = { name=name, i=i, upval=ir == ir2 }
             self.nupvals = self.nupvals + 1
-            return set and IR.SETUPVAL or IR.GETUPVAL, self.nupvals-1
+            return ir2, self.nupvals-1
         end
     end
-    return set and IR.SETGLOBAL or IR.GETGLOBAL, -1
+    return set and IR.SETGLOBAL or IR.GETGLOBAL
 end
 
 function irc:constant(value, makeir)
@@ -159,7 +179,8 @@ function irc:expr(expr)
     if not func then
         error(("No IR compile rule for %s"):format(t)) -- TODO: error
     end
-    return self:inst(func(self, expr))
+    local ir, t = func(self, expr)
+    return self:inst(ir), t
 end
 
 function irc:stmt(stmt, ret)
@@ -180,19 +201,6 @@ function irc:stmt(stmt, ret)
             self.ir[i+j] = v
         end
     end
-end
-
-function irc:declare(name)
-    local n = 0
-    for _,v in pairs(self.nlocals) do
-        n = n + 1
-    end
-    if n >= 200 then
-        error("Too many locals")
-    end
-    self.nlocals[self.depth] = self.nlocals[self.depth] + 1
-    self.locals[#self.locals+1] = { name=name, i=#self.locals, close=false }
-    return #self.locals-1
 end
 
 function irc:closure(args)
@@ -259,11 +267,33 @@ irc[ET.ForNum] = function(self, stmt)
     local step = stmt.step and self:expr(stmt.step) or self:constant(1, true)
 
     self:declare(stmt.name.name)
-    local stmts = { self:stmt(stmt.loop, true) }
+    local stmts = { self:stmt(stmt.body, true) }
     self.locals[#self.locals] = nil
     self.nlocals[self.depth] = self.nlocals[self.depth] - 1
 
     return { IR.NUMFOR, start, stop, step, stmts }
+end
+
+irc[ET.ForIter] = function(self, stmt)
+    local iter = self:expr(stmt.iter)
+    if iter[1] == IR.CALL then
+        iter[3] = 3
+    elseif iter[1] == IR.NAMECALL then
+        iter[4] = 3
+    end
+
+    for _, name in pairs(stmt.names) do
+        self:declare(name.name)
+    end
+
+    local stmts = { self:stmt(stmt.body, true) }
+
+    for _, name in pairs(stmt.names) do
+        self.locals[#self.locals] = nil
+        self.nlocals[self.depth] = self.nlocals[self.depth] - 1
+    end
+
+    return { IR.ITERFOR, iter, #stmt.names, stmts }
 end
 
 irc[ET.Loop] = function(self, stmt)
@@ -271,7 +301,7 @@ irc[ET.Loop] = function(self, stmt)
 end
 
 irc[ET.While] = function(self, stmt)
-    local loop = { self:stmt(stmt.loop, true) }
+    local loop = { self:stmt(stmt.body, true) }
     for i=#loop,1,-1 do
         loop[i+1] = loop[i]
     end
@@ -293,7 +323,7 @@ end
 
 irc[T.Name] = function(self, tok)
     local ir, r = self:resolve(tok.name)
-    if r == -1 then
+    if not r then
         r = self:constant(tok.name)
     end
     return { ir, r }
@@ -386,6 +416,10 @@ irc[ET.Namecall] = function(self, expr)
     return ir
 end
 
+irc[ET.ExprIndex] = function(self, expr)
+    return { IR.GETTABLE, self:expr(expr.from), self:expr(expr.index) }
+end
+
 irc[ET.NameIndex] = function(self, expr)
     return { IR.GETTABLE, self:expr(expr.from), self:constant(expr.index.name, true) }
 end
@@ -394,7 +428,7 @@ irc["="] = function(self, expr)
     local target = expr[2]
     if target.type == T.Name then
         local ir, r = self:resolve(target.name, true)
-        if r == -1 then
+        if not r then
             r = self:constant(target.name)
         end
         return { ir, r, self:expr(expr[3]) }

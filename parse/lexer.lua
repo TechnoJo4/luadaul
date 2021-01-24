@@ -1,6 +1,6 @@
 local T = require("parse.token")
 local token = require("parse.ast").token
-local utils = require("parse.utils")
+local utils = require("common.utils")
 local chrtbl, enum = utils.chrtbl, utils.enum
 
 local space_chars = " \t\r\n"
@@ -10,7 +10,7 @@ local spaces = enum(spaces_arr)
 local keywords = {
     ["of"] = T.Of,
     ["let"] = T.Let,
-    ["type"] = T.Type,
+    ["typedef"] = T.Type,
     ["export"] = T.Export,
     ["return"] = T.Return,
     ["if"] = T.If,
@@ -19,6 +19,7 @@ local keywords = {
     ["while"] = T.While,
     ["loop"] = T.Loop,
     ["for"] = T.For,
+    ["in"] = T.In,
     ["break"] = T.Break,
     ["true"] = T.True,
     ["false"] = T.False,
