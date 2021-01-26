@@ -12,15 +12,15 @@ local PUSH = base.PUSH
 -- TODO: support non-luajit?
 -- i should probably find a safer way to do this anyways
 local function i8(num)
-    local ptr = ffi.new("uint8_t[1]", { num })
+    local ptr = ffi.new("int8_t[1]", { num })
     return ffi.string(ptr, 1)
 end
 local function i32(num)
-    local ptr = ffi.new("uint32_t[1]", { num })
+    local ptr = ffi.new("int32_t[1]", { num })
     return ffi.string(ptr, 4)
 end
 local function i64(num)
-    local ptr = ffi.new("uint64_t[1]", { num })
+    local ptr = ffi.new("int64_t[1]", { num })
     return ffi.string(ptr, 8)
 end
 local function f64(num)
@@ -51,6 +51,7 @@ end
 local function iABx(o, a, b)
     return bit.bor(bit.lshift(o, pos_OP), bit.lshift(a or 0, pos_A), bit.lshift(b or 0, pos_Bx))
 end
+
 local opcodes = {
     [0] = "MOVE", -- A B     R(A) := R(B)
     [1] = "LOADK", -- A Bx    R(A) := Kst(Bx)
@@ -130,8 +131,12 @@ end
 local ABx_ops = { ["LOADK"]=true, ["GETGLOBAL"]=true, ["SETGLOBAL"]=true, ["CLOSURE"]=true }
 local AsBx_ops = { ["JMP"]=true, ["FORLOOP"]=true, ["FORPREP"]=true }
 
+local function str_tohex(s)
+    return s:gsub(".", function(c) return bit.tohex(string.byte(c)):sub(-2,-1) end)
+end
+
 -- warning: debug printing not in the same order as the bytecode
-local DEBUG_INSTS = false
+local DEBUG_INSTS = true
 local o = {}
 for k,v in pairs(opcodes) do
     local f = iABC
@@ -143,9 +148,16 @@ for k,v in pairs(opcodes) do
         end
     end
     local padded = v..(" "):rep(10-#v)
-    o[v] = function(...)
-        if DEBUG_INSTS then print(padded, ...) end
-        return inst_s(f(k, ...))
+    if DEBUG_INSTS then
+        o[v] = function(...)
+            local s = inst_s(f(k, ...))
+            print(padded, str_tohex(s), ...)
+            return s
+        end
+    else
+        o[v] = function(...)
+            return inst_s(f(k, ...))
+        end
     end
 end
 
@@ -314,7 +326,7 @@ function compiler:RK(ir, ...)
     elseif ir[1] == IR.CONST then
         return "", bit.bor(256, ir[2])
     elseif ir[1] == IR.GETLOCAL then
-        return "", ir[2]
+        return "", self:localreg(ir[2])
     else
         return self:compile(ir, ...)
     end
@@ -467,17 +479,17 @@ end
 
 compiler[IR.FALSE] = function(self, v, r)
     r = r or self:reg()
-    return o.LOADBOOL(r, 0, 0)
+    return o.LOADBOOL(r, 0, 0), r
 end
 
 compiler[IR.TRUE] = function(self, v, r)
     r = r or self:reg()
-    return o.LOADBOOL(r, 1, 0)
+    return o.LOADBOOL(r, 1, 0), r
 end
 
 compiler[IR.NIL] = function(self, v, r)
     r = r or self:reg()
-    return o.LOADNIL(r, r)
+    return o.LOADNIL(r, r), r
 end
 
 compiler[IR.CONST] = function(self, v, r)
