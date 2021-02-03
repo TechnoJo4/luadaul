@@ -5,7 +5,7 @@ local chrtbl, enum = utils.chrtbl, utils.enum
 
 local space_chars = " \t\r\n"
 local spaces_arr = chrtbl(space_chars)
-local spaces = enum(spaces_arr)
+local spaces = enum(spaces_arr, false, true)
 
 local keywords = {
     ["of"] = T.Of,
@@ -47,21 +47,21 @@ local escapes = {
     ["v"] = "\v",
 }
 
-local oper = enum(chrtbl("+-*/%<=>#.:^?!$@|&~"))
+local oper = enum(chrtbl("+-*/%<=>#.:^?!$@|&~"), false, true)
 
 local typename_start_str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 local name_start_str = typename_start_str.."abcdefghijklmnopqrstuvwxyz_"
 local typename_str = name_start_str.."'"
 local name_str = name_start_str.."0123456789'"
 
-local typename_start = enum(chrtbl(typename_start_str))
-local name_start = enum(chrtbl(name_start_str))
-local typename = enum(chrtbl(typename_str))
-local name = enum(chrtbl(name_str))
+local typename_start = enum(chrtbl(typename_start_str), false, true)
+local name_start = enum(chrtbl(name_start_str), false, true)
+local typename = enum(chrtbl(typename_str), false, true)
+local name = enum(chrtbl(name_str), false, true)
 
-local digit = enum(chrtbl("0123456789."))
-local digit_nodot = enum(chrtbl("0123456789"))
-local digit_hex = enum(chrtbl("0123456789abcdefABCDEF"))
+local digit = enum(chrtbl("0123456789."), false, true)
+local digit_nodot = enum(chrtbl("0123456789"), false, true)
+local digit_hex = enum(chrtbl("0123456789abcdefABCDEF"), false, true)
 local function get_next(source, pos, line, column)
     if not pos then
         pos = 1
@@ -77,6 +77,8 @@ local function get_next(source, pos, line, column)
             line = line + 1
             column = 1
             return token({ type = T.Newline, pos = pos-1, line = line, column = 0 }), pos, line, column
+        elseif c == "\t" then
+            column = column + 4
         else
             column = column + 1
         end

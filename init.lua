@@ -7,6 +7,7 @@ setmetatable(_G, { __newindex=function(_, k) error("tried to create global", k) 
 
 local argv
 if process then -- luvi/luvit support
+    argv = {}
     for k,v in ipairs(process.argv) do
         if k > 1 then
             -- TODO: luvi packaged executables will not include the ./init.lua argument,
@@ -38,7 +39,7 @@ if argv[1] then
     end
     print(irc)
     local bcc = lua51.new_compiler(irc, true)
-    local bc = bcc:compile_main("test")
+    local bc = bcc:compile_main("@"..argv[1])
     --p.stop()
 
     local f = io.open("test.luac", "wb")

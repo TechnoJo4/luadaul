@@ -2,8 +2,8 @@
 local function chrtbl(str)
     local i = 1
     local tbl = {}
-    for c in str:gmatch(".") do
-        tbl[i] = c
+    for i=1,#str do
+        tbl[i] = str:sub(i, i)
         i = i + 1
     end
     return tbl
@@ -13,10 +13,11 @@ end
 -- by default, enum is a fun({ [TK]: TV }) -> { [TV]: TK_ },
 -- bi=true makes the return type { [TV]: TK_, [TK_]: TV },
 -- keeping the old indicies
-local function enum(tbl, bi)
+-- nomt=true does not wrap the key in a table/metatable
+local function enum(tbl, bi, nomt)
     local new = {}
     for k,v in pairs(tbl) do
-        local t = setmetatable({k}, {
+        local t = nomt and k or setmetatable({k}, {
             __lt = function(a, b)
                 if type(a) == "table" then a = a[1] end
                 if type(b) == "table" then b = b[1] end

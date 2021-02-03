@@ -387,6 +387,8 @@ function new_parser(source)
             return s
         else
             local s = expr({ ET.ForNum })
+            s.name = name
+            consume_oper(parser.lexer, "=")
             s.start = parser:expr()
             consume(parser.lexer, T.Comma)
             s.stop = parser:expr()
@@ -443,6 +445,7 @@ function parser:expr(prec)
     end
     local func = self.pre[idx]
     if not func then
+        print(token)
         error(("No parse rule for %s"):format(idx)) -- TODO: error
     end
 
