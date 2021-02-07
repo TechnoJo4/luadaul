@@ -56,8 +56,8 @@ end
 
 -- print a line with caret(s) at column
 local function printline(str, column, color, len)
-    io.write(str.."\n")
-    io.write((" "):rep(column) .. color .. ("^"):rep(len or 1) .. reset .. "\n")
+    io.write("    " .. str .. "\n")
+    io.write("    " .. (" "):rep(column) .. color .. ("^"):rep(len or 1) .. reset .. "\n")
 end
 
 -- print an error from a position (in the lexer)
@@ -69,11 +69,15 @@ local function pos(src, pos, line, col, t, msg, filename)
 end
 
 -- print an error from a token (in the parser/compiler)
-local function token(src, tok, t, msg, filename)
-    message(t, msg, tok.line .. ":" .. tok.column, filename)
+local function token(src, tok, t, msg, filename, after)
+    message(t, msg, tok.line .. ":" .. (after and tok.column + tok.len or tok.column), filename)
 
     local l, c = getline(src, tok.pos)
-    printline(l, c, t == types.warning and yellow or red, tok.len)
+    if after then
+        printline(l, c + tok.len, t == types.warning and yellow or red, 1)
+    else
+        printline(l, c, t == types.warning and yellow or red, tok.len)
+    end
 end
 
 return {

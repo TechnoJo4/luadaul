@@ -40,7 +40,7 @@ local function quote(t)
     end
 end
 
-local r_opers_arr = { "^", "#", "*", "%", "/", "+", "-", "<", "<=", ">", ">=", "|>", "->", ".", "," }
+local r_opers_arr = { "^", "#", "*", "%", "/", "+", "-", "<", "<=", ">", ">=", "|>", "->", "." }
 local r_opers = enum(r_opers_arr)
 
 -- Precedence enum
@@ -78,6 +78,7 @@ local function right(parser, token, left, prec)
     return expr({ token, left, parser:expr(prec - 1) })
 end
 
+-- potentially match a token
 local function match(lexer, ttype)
     local i = 1
     local token = lexer.get(i)
@@ -93,7 +94,9 @@ local function match(lexer, ttype)
     return false
 end
 
+-- require a match of a token
 local function consume(lexer, ttype, what)
+    local last = lexer.get(0)
     local token = lexer.adv()
     if ttype ~= T.Newline then
         while token.type == T.Newline do
@@ -102,28 +105,31 @@ local function consume(lexer, ttype, what)
     end
     if token.type ~= ttype then
         --print("prev", lexer.get(-1))
-        error(lexer, token, error_t, "Expected '" .. T.strings[ttype] .. "'" .. (what or ""))
+        error(lexer, last, error_t, "Expected '" .. T.strings[ttype] .. "'" .. (what or ""), nil, true)
     end
     return token
 end
 
+-- require a newline or semicolon to end a statement
 local function consume_end(lexer)
     local token = lexer.adv()
     if token.type ~= T.Newline and token.type ~= T.Semi then
         --print("prev", lexer.get(-1))
-        error(lexer, token, error_t, "Expected newline or ';' after statement")
+        error(lexer, lexer.get(-1), error_t, "Expected newline or ';' after statement", nil, true)
     end
     return token
 end
 
+-- require a match of an operator token
 local function consume_oper(lexer, oper, what)
     local token = lexer.adv()
     if token.type ~= T.Oper or token.oper ~= oper then
-        error(lexer, token, error_t, "Expected '" .. oper .. "'" .. (what or ""))
+        error(lexer, lexer.get(-1), error_t, "Expected '" .. oper .. "'" .. (what or ""), nil, true)
     end
     return token
 end
 
+-- require a match of a type-valid name
 local function typename(lexer, what)
     local token = lexer.adv()
     if token.type ~= T.Name or not token.typevalid then
@@ -132,6 +138,7 @@ local function typename(lexer, what)
     return token
 end
 
+-- this is a pratt parser
 local parser = {}
 local parser_meta = { __index=parser }
 function new_parser(source)
@@ -149,6 +156,7 @@ function new_parser(source)
     self.no_error[T.Else] = true
     self.no_error[T.Semi] = true
 
+    -- literal tokens are used as-is in the syntax tree
     self:def_pre(T.Nil, identity)
     self:def_pre(T.True, identity)
     self:def_pre(T.False, identity)
@@ -156,10 +164,12 @@ function new_parser(source)
     self:def_pre(T.Name, identity)
     self:def_pre(T.String, identity)
 
+    -- unary operators
     self:def_pre("-", prefix)
     self:def_pre("#", prefix)
     self:def_pre("!", prefix)
 
+    -- binary operators
     self:def_post("||", P.Or, left, true)
     self:def_post("&&", P.And, left, true)
     self:def_post("==", P.Equality, left)
@@ -177,17 +187,20 @@ function new_parser(source)
     self:def_post("%", P.Multiplication, left, true)
     self:def_post("^", P.Power, right, true)
 
+    -- conditional expression
+    -- if (cond) true_branch else false_branch
     self:def_pre(T.If, function(parser, token)
         local s = expr({ ET.Conditional })
-        consume(parser.lexer, T.LPar, " before 'if' expression condition")
+        consume(parser.lexer, T.LPar, " before conditional expression condition")
         s.cond = parser:expr()
-        consume(parser.lexer, T.RPar, " after 'if' expression condition")
+        consume(parser.lexer, T.RPar, " after conditional expression condition")
         s.true_branch = parser:expr()
-        consume(parser.lexer, T.Else, " in 'if' expression")
+        consume(parser.lexer, T.Else, " in conditional expression")
         s.false_branch = parser:expr()
         return s
     end)
 
+    -- assignment
     local _assignables = enum({ ET.ExprIndex, ET.NameIndex, T.Name })
     self:def_post("=", P.Assignment, function(parser, token, left, prec)
         local t = left.type or left[1].type or left[1]
@@ -258,6 +271,7 @@ function new_parser(source)
     end
     self:def_pre(T.LBrace, block_lambda)
 
+    -- call arguments
     local function call(parser)
         local i = 1
         local args = {}
@@ -275,6 +289,7 @@ function new_parser(source)
         return args
     end
 
+    -- name indexing - a.b
     self:def_post(".", P.Primary, function(parser, token, left)
         return expr({
             ET.NameIndex,
@@ -283,6 +298,8 @@ function new_parser(source)
             index=consume(parser.lexer, T.Name)
         })
     end)
+
+    -- method call - a:b(c)
     self:def_post(":", P.Primary, function(parser, token, left)
         local name = consume(parser.lexer, T.Name)
         local args
@@ -300,6 +317,8 @@ function new_parser(source)
             token
         })
     end)
+
+    -- call - a(b, c)
     self:def_post(T.LPar, P.Primary, function(parser, token, left)
         return expr({
             ET.Call,
@@ -307,28 +326,38 @@ function new_parser(source)
             args=call(parser)
         })
     end)
+
+    -- trailing lambda call - a {}
     self:def_post(T.LBrace, P.Primary, function(parser, token, left)
+        -- TODO: restrict allowed expression types
         return expr({
             ET.Call,
             target=left,
             args={ block_lambda(parser) }
         })
     end, false, true)
+
+    -- pipeline call - b |> a(c)
     self:def_post("|>", P.Pipeline, function(parser, token, left)
         local e = parser:expr(P.Primary - 1)
         local t = e[1]
+
         if t ~= ET.Call and t ~= ET.Namecall then
             error("Invalid pipeline call target.")
         end
+
+        -- shift all args
         local args = e.args
         for i=#args,1,-1 do
             args[i+1] = args[i]
         end
+        -- add left side of the operator as the first argument
         args[1] = left
         return e
     end)
     -- TODO: pipeline assignment
 
+    -- indexing by expression
     self:def_post(T.LSQB, P.Primary, function(parser, token, left)
         return expr({
             ET.ExprIndex,
@@ -339,12 +368,14 @@ function new_parser(source)
         })
     end)
 
+    -- grouping parentheses
     self:def_pre(T.LPar, function(parser, token)
         local e = parser:expr()
         consume(parser.lexer, T.RPar, " to end grouping parentheses")
         return e
     end)
 
+    -- variable declaration
     self:def_stmt(T.Let, function(parser, token, no_end)
         -- TODO: function declaration
         local name = consume(parser.lexer, T.Name)
@@ -356,6 +387,7 @@ function new_parser(source)
         return expr({ ET.Declare, name=name, value=value })
     end)
 
+    -- block "statement"
     self:def_stmt(T.LBrace, function(parser, token)
         local stmts = {}
         local i = 1
@@ -402,20 +434,25 @@ function new_parser(source)
         return s
     end)
 
+    -- for statement
     self:def_stmt(T.For, function(parser, token)
         consume(parser.lexer, T.LPar)
         local name = consume(parser.lexer, T.Name)
         local comma = match(parser.lexer, T.Comma)
 
+        -- parse the k,v part of "for (k,v in ...)"
+        -- numeric for-loops only ever have a single variable,
+        -- so going through this path means the loop is an interator for loop
         if comma then
             name = { name }
             repeat
                 name[#name+1] = consume(parser.lexer, T.Name)
             until not match(parser.lexer, T.Comma)
-            consume(parser.lexer, T.In)
+            consume(parser.lexer, T.In, " in iterator 'for' loop")
         end
 
         if comma or match(parser.lexer, T.In) then
+            -- parse iterator for loops
             local s = expr({ ET.ForIter })
             if not comma then name = { name } end
             s.names = name
@@ -425,6 +462,7 @@ function new_parser(source)
             s.body = parser:stmt(true)
             return s
         else
+            -- parse numeric for loops
             local s = expr({ ET.ForNum })
             s.name = name
             consume_oper(parser.lexer, "=")
@@ -452,12 +490,25 @@ function new_parser(source)
     return self
 end
 
+-- most binary operators are not allowed as expressions,
+-- but assignment is an operator and user-defined operators might
+-- have intentional side effects so we can't just ban all operators
+-- this table is used to determine the operators and expression types to ban
+local disallowed_binops = enum({
+    "#", "!", "||", "&&", "==", "!=", "<", ">", "<=", ">=", "??", "..", "+", "-", "/", "*", "%",
+    ET.Lambda, ET.NameIndex, ET.ExprIndex
+}, false, true)
+-- parse a statement
 function parser:stmt(allow_block, no_end)
     local token = self.lexer.adv()
+
+    -- skip newlines and semicolons
     while token.type == T.Newline or token.type == T.Semi do
         token = self.lexer.adv()
     end
+
     local func = self.stmts[token.type]
+
     local stmt
     if func and (allow_block or token.type ~= T.LBrace) then
         stmt = func(self, token, no_end)
@@ -465,9 +516,14 @@ function parser:stmt(allow_block, no_end)
         self.lexer.recede(1)
         local e = self:expr()
         -- restrict types of expressions allowed as statements
-        -- e.type checks if the expression is a single token (those defined with identity),
-        -- because tokens all have a .type field
-        if e.type or e[1] == ET.NameIndex or e[1] == ET.ExprIndex or e[1] == ET.Lambda then
+        -- e.type checks if the expression is a single token (those defined with identity - literals),
+        -- all tokens have a .type field, and other syntax tree nodes are arrays
+        if e.type or disallowed_binops[e[1].type == T.Oper and e[1].oper or e[1]] then
+            if e.type then
+                token = e
+            elseif e[1].type then
+                token = e[1]
+            end
             error(self, token, error_t, ("%s expression is not allowed as a statement"):format(e.type or e[1]))
         end
 
@@ -479,18 +535,24 @@ function parser:stmt(allow_block, no_end)
     return stmt
 end
 
+-- parse an expression
 function parser:expr(prec)
+    -- the default maximum precedence
     if not prec then prec = P.Assignment-1 end
 
+    -- get next token, skipping newlines
     local token = self.lexer.adv()
     while token.type == T.Newline do
         token = self.lexer.adv()
     end
+
+    -- get prefix parse rule
     local idx = token.type
     if token.type == T.Oper then
         idx = token.oper
     end
     local func = self.pre[idx]
+    -- if no rule is found, error with unexpected token
     if not func then
         error(self, token, error_t, "Unexpected "..quote(token))
     end
@@ -498,25 +560,24 @@ function parser:expr(prec)
     local left = func(self, token, prec)
     repeat
         local i = 1
+        -- get next token, skipping newlines
         token = self.lexer.get(i)
         while token.type == T.Newline do
             i = i + 1
             token = self.lexer.get(i)
         end
-        if token.type == T.EOF then
-            break
-        end
+        -- stop parsing if end of file
+        if token.type == T.EOF then break end
+
+        -- get parse rule
         idx = token.type
         if token.type == T.Oper then
             idx = token.oper
-        --elseif token.type == T.Name and not token.typevalid then
-        --    idx = token.name
         end
-
         local rule = self.post[idx]
 
         if not rule then
-            -- prefer erroring for unexpected token here
+            -- prefer erroring for unexpected token here, even if not required
             if not self.no_error[idx] and not self.pre[idx] and not self.stmts[idx] then
                 -- without this, invalid inputs might return to a
                 -- lower level and then error there for obscure reasons
@@ -535,21 +596,26 @@ function parser:expr(prec)
 
         if rule.prec+0 <= prec+0 or (i > 1 and not rule.skipnl) then break end
 
+        -- advance the lexer to the token we are using
         self.lexer.adv(i)
+        -- actually parse
         left = rule.func(self, token, left, rule.prec)
     until false
 
     return left
 end
 
+-- define statement parse rule
 function parser:def_stmt(tok, func)
     self.stmts[tok] = func
 end
 
+-- define prefix parse rule
 function parser:def_pre(tok, func)
     self.pre[tok] = func
 end
 
+-- define postfix parse rule
 function parser:def_post(tok, prec, func, create_assign_oper, no_nl)
     self.post[tok] = { prec=prec, func=func, skipnl=(not no_nl) }
     if create_assign_oper then
