@@ -1,5 +1,5 @@
 -- types of tokens
-return require("common.utils").enum({
+local enum = require("common.utils").enum({
     "Oper",
     "Number",
     "String",
@@ -30,6 +30,36 @@ return require("common.utils").enum({
     "Loop",
     "For", "In",
     "Break",
-    "Error",
     "EOF"
 }, true)
+
+enum.strings = {
+    [enum.Backslash] = "\\",
+    [enum.Comma] = ",",
+    [enum.Dot] = ".",
+    [enum.Semi] = ";",
+    [enum.LBrace] = "{",
+    [enum.RBrace] = "}",
+    [enum.LPar] = "(",
+    [enum.RPar] = ")",
+    [enum.LSQB] = "[",
+    [enum.RSQB] = "]",
+    [enum.Return] = "return",
+    [enum.Export] = "export",
+    [enum.Let] = "let",
+    [enum.Type] = "typedef",
+    [enum.Of] = "of",
+    [enum.Nil] = "nil",
+    [enum.True] = "true",
+    [enum.False] = "false",
+    [enum.If] = "if",
+    [enum.Else] = "else",
+    [enum.Do] = "do",
+    [enum.While] = "while",
+    [enum.Loop] = "loop",
+    [enum.For] = "for",
+    [enum.In] = "in",
+    [enum.Break] = "break"
+}
+
+return enum

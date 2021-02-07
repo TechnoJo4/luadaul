@@ -4,10 +4,11 @@ return function(func, arg)
 
     local self; self = {
         pos = 0,
+        source = arg,
 
         generate = function()
             if i > 0 and not last[2] then
-                error("Stream error: tried to generate after end of stream")
+                error("tried to generate after end of stream")
             end
             i = i + 1
             last[1] = arg

@@ -209,7 +209,6 @@ function irc:closure(args)
         n = n + 1
     end
     if n >= 255 then
-        -- can this even realistically happen
         error("Too many prototypes")
     end
     local new = new_irc(self, args)

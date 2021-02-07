@@ -8,6 +8,38 @@ local T = lexer.token_types
 local ET = ast.expr_types
 local expr = ast.expr
 
+local DEBUG_ERRORS = true
+
+local errors = require("common.errors")
+local error_t = errors.types.syntax_error
+local function error(o, ...)
+    errors.at_token(o.source, ...)
+    if DEBUG_ERRORS then
+        print(debug.traceback("", 2))
+    end
+    os.exit(1)
+end
+
+local function quote(t)
+    if type(t) == "string" then
+        return "token '"..t.."'"
+    elseif t.type == T.Oper then
+        return "token '"..t.oper.."'"
+    elseif t.type == T.Number then
+        return "number"
+    elseif t.type == T.String then
+        return "string"
+    elseif t.type == T.Name then
+        return "name"
+    elseif t.type == T.Newline then
+        return "newline"
+    elseif t.type == T.EOF then
+        return "end of file"
+    else
+        return "token '"..T.strings[t.type].."'"
+    end
+end
+
 local r_opers_arr = { "^", "#", "*", "%", "/", "+", "-", "<", "<=", ">", ">=", "|>", "->", ".", "," }
 local r_opers = enum(r_opers_arr)
 
@@ -61,7 +93,7 @@ local function match(lexer, ttype)
     return false
 end
 
-local function consume(lexer, ttype)
+local function consume(lexer, ttype, what)
     local token = lexer.adv()
     if ttype ~= T.Newline then
         while token.type == T.Newline do
@@ -69,8 +101,8 @@ local function consume(lexer, ttype)
         end
     end
     if token.type ~= ttype then
-        print("prev", lexer.get(-1), "cur", token, "expected", ttype)
-        error("error (consume)") -- TODO: error
+        --print("prev", lexer.get(-1))
+        error(lexer, token, error_t, "Expected '" .. T.strings[ttype] .. "'" .. (what or ""))
     end
     return token
 end
@@ -78,26 +110,24 @@ end
 local function consume_end(lexer)
     local token = lexer.adv()
     if token.type ~= T.Newline and token.type ~= T.Semi then
-        print("prev", lexer.get(-1), "cur", token)
-        error("error (consume_end)") -- TODO: error
+        --print("prev", lexer.get(-1))
+        error(lexer, token, error_t, "Expected newline or ';' after statement")
     end
     return token
 end
 
-local function consume_oper(lexer, oper)
+local function consume_oper(lexer, oper, what)
     local token = lexer.adv()
     if token.type ~= T.Oper or token.oper ~= oper then
-        print(token)
-        error("error (consume_oper)") -- TODO: error
+        error(lexer, token, error_t, "Expected '" .. oper .. "'" .. (what or ""))
     end
     return token
 end
 
-local function typename(lexer)
+local function typename(lexer, what)
     local token = lexer.adv()
     if token.type ~= T.Name or not token.typevalid then
-        print(token)
-        error("error (typename)") -- TODO: error
+        error("Expected valid type name" .. (what or ""))
     end
     return token
 end
@@ -106,9 +136,18 @@ local parser = {}
 local parser_meta = { __index=parser }
 function new_parser(source)
     local self = setmetatable({
+        source = source,
         lexer = stream(lexer.get_next, source),
-        stmts = {}, pre = {}, post = {}
+        stmts = {}, pre = {}, post = {},
+        no_error = {}
     }, parser_meta)
+
+    self.no_error[T.Comma] = true
+    self.no_error[T.RPar] = true
+    self.no_error[T.RBrace] = true
+    self.no_error[T.RSQB] = true
+    self.no_error[T.Else] = true
+    self.no_error[T.Semi] = true
 
     self:def_pre(T.Nil, identity)
     self:def_pre(T.True, identity)
@@ -140,11 +179,11 @@ function new_parser(source)
 
     self:def_pre(T.If, function(parser, token)
         local s = expr({ ET.Conditional })
-        consume(parser.lexer, T.LPar)
+        consume(parser.lexer, T.LPar, " before 'if' expression condition")
         s.cond = parser:expr()
-        consume(parser.lexer, T.RPar)
+        consume(parser.lexer, T.RPar, " after 'if' expression condition")
         s.true_branch = parser:expr()
-        consume(parser.lexer, T.Else)
+        consume(parser.lexer, T.Else, " in 'if' expression")
         s.false_branch = parser:expr()
         return s
     end)
@@ -155,7 +194,7 @@ function new_parser(source)
         if not _assignables[t == T.Oper and left[1].oper or t] then
             -- TODO: error
             print(left, t)
-            error("Invalid assignment target")
+            error(parser, token, error_t, "Invalid assignment target")
         end
 
         return expr({ token, left, parser:expr(prec-1) })
@@ -227,7 +266,7 @@ function new_parser(source)
                 args[i] = parser:expr()
                 i = i + 1
             until not match(parser.lexer, T.Comma)
-            consume(parser.lexer, T.RPar)
+            consume(parser.lexer, T.RPar, " after function call")
         end
         if match(parser.lexer, T.LBrace) then
             args[i] = block_lambda(parser)
@@ -250,7 +289,7 @@ function new_parser(source)
         if match(parser.lexer, T.LBrace) then
             args = { block_lambda(parser) }
         else
-            consume(parser.lexer, T.LPar)
+            consume(parser.lexer, T.LPar, " for method call")
             args = call(parser)
         end
         return expr({
@@ -296,20 +335,20 @@ function new_parser(source)
             token,
             from=left,
             index=parser:expr(),
-            consume(parser.lexer, T.RSQB)
+            consume(parser.lexer, T.RSQB, " in indexing expression")
         })
     end)
 
     self:def_pre(T.LPar, function(parser, token)
         local e = parser:expr()
-        consume(parser.lexer, T.RPar)
+        consume(parser.lexer, T.RPar, " to end grouping parentheses")
         return e
     end)
 
     self:def_stmt(T.Let, function(parser, token, no_end)
         -- TODO: function declaration
         local name = consume(parser.lexer, T.Name)
-        consume_oper(parser.lexer, "=")
+        consume_oper(parser.lexer, "=", " in declaration")
         local value = parser:expr()
         if not no_end then
             consume_end(parser.lexer)
@@ -341,9 +380,9 @@ function new_parser(source)
 
     self:def_stmt(T.If, function(parser, token, no_end)
         local s = expr({ ET.If })
-        consume(parser.lexer, T.LPar)
+        consume(parser.lexer, T.LPar, " before 'if' condition")
         s.cond = parser:expr()
-        consume(parser.lexer, T.RPar)
+        consume(parser.lexer, T.RPar, " after 'if' condition")
         s.true_branch = parser:stmt(true, true)
         if match(parser.lexer, T.Else) then
             s.false_branch = parser:stmt(true, true)
@@ -356,9 +395,9 @@ function new_parser(source)
 
     self:def_stmt(T.While, function(parser, token, no_end)
         local s = expr({ ET.While })
-        consume(parser.lexer, T.LPar)
+        consume(parser.lexer, T.LPar, " before 'while' condition")
         s.cond = parser:expr()
-        consume(parser.lexer, T.RPar)
+        consume(parser.lexer, T.RPar, " after 'while' condition")
         s.body = parser:stmt(true)
         return s
     end)
@@ -415,7 +454,7 @@ end
 
 function parser:stmt(allow_block, no_end)
     local token = self.lexer.adv()
-    while token.type == T.Newline do
+    while token.type == T.Newline or token.type == T.Semi do
         token = self.lexer.adv()
     end
     local func = self.stmts[token.type]
@@ -424,7 +463,15 @@ function parser:stmt(allow_block, no_end)
         stmt = func(self, token, no_end)
     else
         self.lexer.recede(1)
-        stmt = expr({ ET.Expression, self:expr() })
+        local e = self:expr()
+        -- restrict types of expressions allowed as statements
+        -- e.type checks if the expression is a single token (those defined with identity),
+        -- because tokens all have a .type field
+        if e.type or e[1] == ET.NameIndex or e[1] == ET.ExprIndex or e[1] == ET.Lambda then
+            error(self, token, error_t, ("%s expression is not allowed as a statement"):format(e.type or e[1]))
+        end
+
+        stmt = expr({ ET.Expression, e })
         if not no_end then
             consume_end(self.lexer)
         end
@@ -445,8 +492,7 @@ function parser:expr(prec)
     end
     local func = self.pre[idx]
     if not func then
-        print(token)
-        error(("No parse rule for %s"):format(idx)) -- TODO: error
+        error(self, token, error_t, "Unexpected "..quote(token))
     end
 
     local left = func(self, token, prec)
@@ -463,12 +509,31 @@ function parser:expr(prec)
         idx = token.type
         if token.type == T.Oper then
             idx = token.oper
-        elseif token.type == T.Name and not token.typevalid then
-            idx = token.name
+        --elseif token.type == T.Name and not token.typevalid then
+        --    idx = token.name
         end
 
         local rule = self.post[idx]
-        if not rule or rule.prec+0 <= prec+0 or (i > 1 and not rule.skipnl) then break end
+
+        if not rule then
+            -- prefer erroring for unexpected token here
+            if not self.no_error[idx] and not self.pre[idx] and not self.stmts[idx] then
+                -- without this, invalid inputs might return to a
+                -- lower level and then error there for obscure reasons
+                -- example: "a(b ## c)" (imagine ## is undefined here),
+                -- the function breaks, returns to call and errors with "Expected RPar",
+                -- the same input outside of a call returns to stmt and then error with
+                -- an even more obscure error, "Name expression is not allowed as a statement",
+                -- whereas clearly the real problem is the invalid operator
+                error(self, token, error_t, "Unexpected "..quote(token))
+            end
+
+            -- if the parser could be expecting that token somewhere else,
+            -- return to a lower level without erroring
+            break
+        end
+
+        if rule.prec+0 <= prec+0 or (i > 1 and not rule.skipnl) then break end
 
         self.lexer.adv(i)
         left = rule.func(self, token, left, rule.prec)

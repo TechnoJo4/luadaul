@@ -3,6 +3,13 @@ local token = require("parse.ast").token
 local utils = require("common.utils")
 local chrtbl, enum = utils.chrtbl, utils.enum
 
+local errors = require("common.errors")
+local error_t = errors.types.syntax_error
+local function error(...)
+    errors.at_pos(...)
+    os.exit(1)
+end
+
 local space_chars = " \t\r\n"
 local spaces_arr = chrtbl(space_chars)
 local spaces = enum(spaces_arr, false, true)
@@ -85,9 +92,11 @@ local function get_next(source, pos, line, column)
         c = source:sub(pos, pos)
     end
     if pos > len then
-        return token({ type=T.EOF, pos=pos, len=0, line=line, column=column })
+        return token({ type=T.EOF, pos=pos, len=1, line=line, column=column })
     end
 
+    -- when rewriting this to daul (self-hosting),
+    -- use an inline function so no closure is created (luajit NYI)
     local function lex_rep(enum, ttype, key, action, pre)
         if enum[c] then
             local start = pos
@@ -124,7 +133,7 @@ local function get_next(source, pos, line, column)
             column = column + 1
             c = source:sub(pos, pos)
             if pos > len then
-                error("Unfinished string") -- TODO: error
+                error(source, pos, line, column, error_t, "Unfinished string")
             end
 
             if escape then
@@ -133,23 +142,23 @@ local function get_next(source, pos, line, column)
                 elseif digit_nodot[c] then
                     local n = lex_rep(digit_nodot, nil, nil, tonumber)
                     if n > 255 then
-                        error("Invalid escape") -- TODO: error
+                        error(source, pos, line, column, error_t, "Invalid escape")
                     end
                     data = data .. string.char(n)
                     pos = pos - 1
                 elseif c == 'x' then
                     local s = source:sub(pos+1, pos+2)
                     if #s ~= 2 then
-                        error("Unfinished string") -- TODO: error
+                        error(source, pos, line, column, error_t, "Unfinished string")
                     end
                     local n = tonumber("0x"..s)
                     if not n or n > 255 then
-                        error("Invalid escape") -- TODO: error
+                        error(source, pos, line, column, error_t, "Invalid escape")
                     end
                     data = data .. string.char(n)
                     pos = pos + 2
                 else
-                    error("Invalid escape") -- TODO: error
+                    error(source, pos, line, column, error_t, "Invalid escape")
                 end
                 escape = false
             elseif c == "\\" then
@@ -161,7 +170,8 @@ local function get_next(source, pos, line, column)
             end
         until false
 
-        return token({ type=T.String, data=data, pos=start, len=pos-start, line=line, column=startcol }), pos+1, line, column+1
+        pos = pos + 1
+        return token({ type=T.String, data=data, pos=start, len=pos-start, line=line, column=startcol }), pos, line, column+1
     end
 
     local t = symbols[c]
@@ -222,7 +232,7 @@ local function get_next(source, pos, line, column)
                 return unpack(ret)
             else
                 p(ret)
-                -- TODO: error
+                error(source, pos, line, column, error_t, "Invalid hexadecimal literal")
             end
         elseif c == 'b' then
             pos = pos + 1
@@ -234,7 +244,7 @@ local function get_next(source, pos, line, column)
             if ret[1] then
                 return unpack(ret)
             else
-                -- TODO: error
+                error(source, pos, line, column, error_t, "Invalid binary literal")
             end
         elseif not digit[c] then
             return token({
@@ -256,7 +266,7 @@ local function get_next(source, pos, line, column)
             c = source:sub(pos, pos)
             if c == '.' then
                 if dot then
-                    -- TODO: error
+                    error(source, pos, line, column, error_t, "Invalid number literal (more than one '.')")
                 else
                     dot = true
                 end
@@ -276,9 +286,7 @@ local function get_next(source, pos, line, column)
         }), pos, line, column
     end
 
-    -- TODO: error
-    p(source:sub(pos-1))
-    error("what the fuck")
+    error(source, pos, line, column, error_t, "Unexpected character '"..source:sub(pos, pos).."'")
 end
 
 local function get_all(source)
