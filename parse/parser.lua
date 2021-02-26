@@ -144,7 +144,8 @@ local parser_meta = { __index=parser }
 function new_parser(source)
     local self = setmetatable({
         source = source,
-        lexer = stream(lexer.get_next, source),
+        -- TODO: only enable pregen for benchmarking/debug
+        lexer = stream(lexer.get_next, source, true),
         stmts = {}, pre = {}, post = {},
         no_error = {}
     }, parser_meta)

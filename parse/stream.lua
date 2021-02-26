@@ -1,6 +1,18 @@
 -- lazy token stream
-return function(func, arg)
+return function(func, arg, pregen)
     local last, stream, i = {}, {}, 0
+
+    local time = 0
+    if pregen then
+        local s = os.clock()
+        repeat
+            i = i + 1
+            last[1] = arg
+            last = { func(unpack(last)) }
+            stream[i] = last[1]
+        until not last[2]
+        time = os.clock() - s
+    end
 
     local self; self = {
         pos = 0,
@@ -32,6 +44,10 @@ return function(func, arg)
                 self.generate()
             end
             return stream[self.pos + offset]
+        end,
+
+        time = function()
+            return time
         end
     }
 

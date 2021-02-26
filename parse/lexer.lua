@@ -10,9 +10,7 @@ local function error(...)
     os.exit(1)
 end
 
-local space_chars = " \t\r\n"
-local spaces_arr = chrtbl(space_chars)
-local spaces = enum(spaces_arr, false, true)
+local sbyte = string.byte
 
 local keywords = {
     ["of"] = T.Of,
@@ -34,41 +32,103 @@ local keywords = {
 }
 
 local symbols = {
-    ["\\"] = T.Backslash,
-    [","] = T.Comma, [";"] = T.Semi,
-    ["{"] = T.LBrace, ["}"] = T.RBrace,
-    ["("] = T.LPar, [")"] = T.RPar,
-    ["["] = T.LSQB, ["]"] = T.RSQB,
+    [sbyte("\\")] = T.Backslash,
+    [sbyte(",")] = T.Comma, [sbyte(";")] = T.Semi,
+    [sbyte("{")] = T.LBrace, [sbyte("}")] = T.RBrace,
+    [sbyte("(")] = T.LPar, [sbyte(")")] = T.RPar,
+    [sbyte("[")] = T.LSQB, [sbyte("]")] = T.RSQB,
 }
 
 local escapes = {
-    ["\\"] = "\\",
-    ['"'] = '"',
-    ["'"] = "'",
-    ["a"] = "\a",
-    ["b"] = "\b",
-    ["f"] = "\f",
-    ["n"] = "\n",
-    ["r"] = "\r",
-    ["t"] = "\t",
-    ["v"] = "\v",
+    [sbyte("\\")] = "\\",
+    [sbyte('"')] = '"',
+    [sbyte("'")] = "'",
+    [sbyte("a")] = "\a",
+    [sbyte("b")] = "\b",
+    [sbyte("f")] = "\f",
+    [sbyte("n")] = "\n",
+    [sbyte("r")] = "\r",
+    [sbyte("t")] = "\t",
+    [sbyte("v")] = "\v",
 }
 
-local oper = enum(chrtbl("+-*/%<=>#.:^?!$@|&~"), false, true)
+local single_quote = sbyte("'")
+local double_quote = sbyte('"')
 
-local typename_start_str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-local name_start_str = typename_start_str.."abcdefghijklmnopqrstuvwxyz_"
-local typename_str = name_start_str.."'"
-local name_str = name_start_str.."0123456789'"
+local function oper(c)
+    -- +-*/%<=>#.:^?!$@|&~
+    -- refer to ascii table
+    return c == sbyte("!")
+        or c >= sbyte("#") and c <= sbyte("&") -- # $ % &
+        or c >= sbyte("-") and c <= sbyte("/") -- - . /
+        or c >= sbyte("<") and c <= sbyte("@") -- < = > ? @
+        or c == sbyte("*") or c == sbyte("+")
+        or c == sbyte(":")
+        or c == sbyte("^") or c == sbyte("|") or c == sbyte("~")
+end
 
-local typename_start = enum(chrtbl(typename_start_str), false, true)
-local name_start = enum(chrtbl(name_start_str), false, true)
-local typename = enum(chrtbl(typename_str), false, true)
-local name = enum(chrtbl(name_str), false, true)
+local zero, nine = sbyte("0"), sbyte("9")
+local function digit_nodot(c)
+    return c >= zero and c <= nine
+end
 
-local digit = enum(chrtbl("0123456789."), false, true)
-local digit_nodot = enum(chrtbl("0123456789"), false, true)
-local digit_hex = enum(chrtbl("0123456789abcdefABCDEF"), false, true)
+local dot = sbyte(".")
+local function digit(c)
+    return digit_nodot(c) or c == dot
+end
+
+local A, Z = sbyte("A"), sbyte("Z")
+local function typename_start(c)
+    return c >= A and c <= Z
+end
+
+local a, z, underscore = sbyte("a"), sbyte("z"), sbyte("_")
+local function name_start(c)
+    return typename_start(c) or (c >= a and c <= z) or c == underscore
+end
+
+local function typename(c)
+    return name_start(c) or c == single_quote
+end
+
+local function name(c)
+    return typename(c) or digit_nodot(c)
+end
+
+local newline, _r, tab, space = sbyte("\n"), sbyte("\r"), sbyte("\t"), sbyte(" ")
+local function spaces(c)
+    return c == newline or c == _r or c == tab or c == space
+end
+
+local function digit_hex(c)
+    return digit_nodot(c)
+end
+
+local function lex_rep(source, pos, line, column, check, ttype, key, action, pre)
+    local c = sbyte(source, pos)
+    if check(c) then
+        local start = pos
+        local startl = line
+        local startc = column
+
+        repeat
+            pos = pos + 1
+            column = column + 1
+            c = sbyte(source, pos)
+        until not check(c)
+
+        local str = source:sub(start, pos - 1)
+        if action then str = action(pre and pre..str or str) end
+        if not ttype then return str, pos - start, startl, startc end
+        return token({
+            type = ttype, [key] = str,
+            pos = start, len = pos - start,
+            line = startl, column = startc
+        }), pos, line, column
+    end
+    return
+end
+
 local function get_next(source, pos, line, column)
     if not pos then
         pos = 1
@@ -77,51 +137,25 @@ local function get_next(source, pos, line, column)
     end
 
     local len = #source
-    local c = source:sub(pos, pos)
-    while pos <= len and spaces[c] do
+    local c = sbyte(source, pos)
+    while pos <= len and spaces(c) do
         pos = pos + 1
-        if c == "\n" then
+        if c == newline then
             line = line + 1
             column = 1
             return token({ type = T.Newline, pos = pos-1, line = line, column = 0 }), pos, line, column
-        elseif c == "\t" then
+        elseif c == tab then
             column = column + 4
         else
             column = column + 1
         end
-        c = source:sub(pos, pos)
+        c = sbyte(source, pos)
     end
     if pos > len then
         return token({ type=T.EOF, pos=pos, len=1, line=line, column=column })
     end
 
-    -- when rewriting this to daul (self-hosting),
-    -- use an inline function so no closure is created (luajit NYI)
-    local function lex_rep(enum, ttype, key, action, pre)
-        if enum[c] then
-            local start = pos
-            local startl = line
-            local startc = column
-
-            repeat
-                pos = pos + 1
-                column = column + 1
-                c = source:sub(pos, pos)
-            until not enum[c]
-
-            local str = source:sub(start, pos - 1)
-            if action then str = action(pre and pre..str or str) end
-            if not ttype then return str, pos - start, startl, startc end
-            return token({
-                type = ttype, [key] = str,
-                pos = start, len = pos - start,
-                line = startl, column = startc
-            }), pos, line, column
-        end
-        return
-    end
-
-    if c == "'" or c == '"' then
+    if c == single_quote or c == double_quote then
         local start = pos
         local startcol = column
         local startchar = c
@@ -131,7 +165,7 @@ local function get_next(source, pos, line, column)
         repeat
             pos = pos + 1
             column = column + 1
-            c = source:sub(pos, pos)
+            c = sbyte(source, pos)
             if pos > len then
                 error(source, pos, line, column, error_t, "Unfinished string")
             end
@@ -139,13 +173,13 @@ local function get_next(source, pos, line, column)
             if escape then
                 if escapes[c] then
                     data = data .. escapes[c]
-                elseif digit_nodot[c] then
-                    local n = lex_rep(digit_nodot, nil, nil, tonumber)
+                elseif digit_nodot(c) then
+                    local n = lex_rep(source, pos, line, column, digit_nodot, nil, nil, tonumber)
                     if n > 255 then
                         error(source, pos, line, column, error_t, "Invalid escape")
                     end
                     data = data .. string.char(n)
-                    pos = pos - 1
+                    pos = ret[2] - 1
                 elseif c == 'x' then
                     local s = source:sub(pos+1, pos+2)
                     if #s ~= 2 then
@@ -166,7 +200,7 @@ local function get_next(source, pos, line, column)
             elseif c == startchar then
                 break -- returns outside of loop
             else
-                data = data .. c
+                data = data .. string.char(c)
             end
         until false
 
@@ -179,18 +213,19 @@ local function get_next(source, pos, line, column)
         return token({ type=t, pos=pos, len=1, line=line, column=column }), pos+1, line, column+1
     end
 
-    if name_start[c] then
+    if name_start(c) then
         local start = pos
         local startl = line
         local startc = column
-        local typevalid = typename_start[c] and true
+        local typevalid = typename_start(c)
 
-        repeat
+        while true do
             pos = pos + 1
             column = column + 1
-            c = source:sub(pos, pos)
-            typevalid = typevalid and (not name[c] or typename[c])
-        until not name[c]
+            c = sbyte(source, pos)
+            if not name(c) then break end
+            typevalid = typevalid and typename(c)
+        end
 
         local str = source:sub(start, pos - 1)
         if keywords[str] then
@@ -210,43 +245,31 @@ local function get_next(source, pos, line, column)
         }), pos, line, column
     end
 
-    local ret = { lex_rep(oper, T.Oper, "oper") }
+    local ret = { lex_rep(source, pos, line, column, oper, T.Oper, "oper") }
     if ret[1] then
         if ret[1].oper == "." then
-            pos, column, c = ret[1].pos, ret[1].column, "."
+            pos, column, c = ret[1].pos, ret[1].column, dot
         else
             return unpack(ret)
         end
     end
 
-    if c == '0' then
+    if c == zero then
         pos = pos + 1
         column = column + 1
-        c = source:sub(pos, pos)
-        if c == 'x' then
+        c = sbyte(source, pos)
+        if c == sbyte('x') then
             pos = pos + 1
             column = column + 1
-            c = source:sub(pos, pos)
-            ret = { lex_rep(digit_hex, T.Number, "num", tonumber, "0x") }
+            c = sbyte(source, pos)
+            ret = { lex_rep(source, pos, line, column, digit_hex, T.Number, "num", tonumber, "0x") }
             if ret[1] then
                 return unpack(ret)
             else
                 p(ret)
-                error(source, pos, line, column, error_t, "Invalid hexadecimal literal")
+                error(source, ret[2], ret[3], ret[4], error_t, "Invalid hexadecimal literal")
             end
-        elseif c == 'b' then
-            pos = pos + 1
-            column = column + 1
-            c = source:sub(pos, pos)
-            ret = { lex_rep(enum(chrtbl("01")), T.Number, "num", function()
-                -- TODO: parse binary
-            end) }
-            if ret[1] then
-                return unpack(ret)
-            else
-                error(source, pos, line, column, error_t, "Invalid binary literal")
-            end
-        elseif not digit[c] then
+        elseif not digit(c) then
             return token({
                 type = T.Number, num = 0,
                 pos = pos-1, len = 1,
@@ -255,25 +278,25 @@ local function get_next(source, pos, line, column)
         end
     end
 
-    if digit[c] then
+    if digit(c) then
         local start = pos
         local startc = column
-        local dot = c == '.'
+        local hasdot = c == dot
 
         repeat
             pos = pos + 1
             column = column + 1
-            c = source:sub(pos, pos)
-            if c == '.' then
-                if dot then
+            c = sbyte(source, pos)
+            if c == dot then
+                if hasdot then
                     error(source, pos, line, column, error_t, "Invalid number literal (more than one '.')")
                 else
-                    dot = true
+                    hasdot = true
                 end
             end
-        until not digit[c]
+        until not digit(c)
 
-        if start + 1 == pos and dot then
+        if start + 1 == pos and hasdot then
             -- the only character is a dot,
             -- use ret from oper lex_rep
             return unpack(ret)
@@ -286,7 +309,7 @@ local function get_next(source, pos, line, column)
         }), pos, line, column
     end
 
-    error(source, pos, line, column, error_t, "Unexpected character '"..source:sub(pos, pos).."'")
+    error(source, pos, line, column, error_t, "Unexpected character '"..sbyte(source, pos).."'")
 end
 
 local function get_all(source)
