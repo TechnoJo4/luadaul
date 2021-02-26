@@ -1,0 +1,21 @@
+
+let visited = require("temp")()
+let p = { v, i ->
+    if (!i) i = 0
+    if (visited[v]) return "visited"
+    visited[v] = true
+
+    if (type(v) == "function")
+        return "function"
+    else if (type(v) == "table") {
+        let s = ""
+
+        for (k, v2 in pairs(v)) {
+            s = s .. "\n" .. " ":rep(i) .. tostring(k) .. " = " .. p(v2, i+1)
+        }
+
+        return s
+    } else return tostring(v)
+}
+
+print(p(_G))

@@ -1,0 +1,8 @@
+let time = { f, v ->
+    let s = os.clock()
+    let ret = f(v)
+    let e = os.clock()
+    print("f(%s) = %s, time is %s":format(v, ret, e - s))
+}
+
+return time
