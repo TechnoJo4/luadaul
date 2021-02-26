@@ -7,7 +7,16 @@ local fold = {
     [IR.MUL] = function(a, b) return a * b end,
     [IR.DIV] = function(a, b) return a / b end,
     [IR.MOD] = function(a, b) return a % b end,
-    [IR.POW] = function(a, b) return a ^ b end
+    [IR.POW] = function(a, b) return a ^ b end,
+
+    [IR.EQ] = function(a, b) return a == b end,
+    [IR.NEQ] = function(a, b) return a ~= b end,
+    [IR.LT] = function(a, b) return a < b end,
+    [IR.GT] = function(a, b) return a > b end,
+    [IR.LTEQ] = function(a, b) return a <= b end,
+    [IR.GTEQ] = function(a, b) return a >= b end,
+    [IR.OR] = function(a, b) return a or b end,
+    [IR.AND] = function(a, b) return a and b end,
 }
 local foldr = {
     [IR.ADD] = function(l, a, b)
@@ -48,7 +57,7 @@ local foldr = {
 
 local function inst(ir, irc)
     if fold[ir[1]] then
-        -- TODO: check operands are numbers
+        -- TODO: check operands types are correct
         local l = ir[2]
         local r = ir[3]
         if l[1] == IR.CONST and r[1] == IR.CONST then

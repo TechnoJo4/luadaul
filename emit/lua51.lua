@@ -9,23 +9,21 @@ local IR = irc.IR
 
 local PUSH = base.PUSH
 
--- TODO: support non-luajit?
--- i should probably find a safer way to do this anyways
-local function i8(num)
-    local ptr = ffi.new("int8_t[1]", { num })
-    return ffi.string(ptr, 1)
-end
+local u8 = string.char
 local function i32(num)
-    local ptr = ffi.new("int32_t[1]", { num })
-    return ffi.string(ptr, 4)
+    return u8(bit.band(num, 0xff))
+        .. u8(bit.band(bit.rshift(num, 8), 0xff))
+        .. u8(bit.band(bit.rshift(num, 16), 0xff))
+        .. u8(bit.band(bit.rshift(num, 24), 0xff))
 end
-local function i64(num)
-    local ptr = ffi.new("int64_t[1]", { num })
-    return ffi.string(ptr, 8)
+local function u64(num)
+    return i32(num).."\0\0\0\0"
 end
+
+-- TODO: support non-luajit?
+local double_t = ffi.typeof('double[1]')
 local function f64(num)
-    local ptr = ffi.new("double[1]", { num })
-    return ffi.string(ptr, 8)
+    return ffi.string(double_t({ num }), 8)
 end
 
 local inst_s = i32
@@ -136,7 +134,7 @@ local function str_tohex(s)
 end
 
 -- warning: debug printing not in the same order as the bytecode
-local DEBUG_INSTS = true
+local DEBUG_INSTS = false
 local o = {}
 for k,v in pairs(opcodes) do
     local f = iABC
@@ -181,13 +179,13 @@ local function chunk(data)
             data.linedata[i] = i32(i)
         end
     end
-    return str(data.name, data.x64 and i64 or i32)
+    return str(data.name, data.x64 and u64 or i32)
         .. i32(data.startline)
         .. i32(data.endline)
-        .. i8(data.nupvals)
-        .. i8(data.nparams)
-        .. i8(data.is_vararg)
-        .. i8(data.maxstack)
+        .. u8(data.nupvals)
+        .. u8(data.nparams)
+        .. u8(data.is_vararg)
+        .. u8(data.maxstack)
         .. list(data.code, data.ninsts)
         .. list(data.constants)
         .. list(data.protos)
@@ -198,7 +196,7 @@ end
 
 local compiler = setmetatable({ cond={} }, { __index=base.base })
 local function new_compiler(irc, x64)
-    local size_t = x64 and i64 or i32
+    local size_t = x64 and u64 or i32
 
     local self = setmetatable({
         name=nil, startline=0, endline=0, is_vararg=0,
@@ -452,6 +450,8 @@ local function binop(inst)
         local lhs, rhs = v[2], v[3]
         local b, rb
         local a, ra = self:RK(lhs, r)
+        r = r or ra
+
         if same(lhs, rhs) then
             b, rb = "", ra
         else
@@ -466,7 +466,7 @@ local function binop(inst)
         if r ~= ra and shouldpop(self, ra) then
             self:reg(ra, false)
         end
-        return s, ra
+        return s, r
     end
 end
 local function unop(inst)
@@ -572,6 +572,9 @@ local function bincmp(inst, swap)
 
         if rb ~= rc and shouldpop(self, rc) then
             self:reg(rc, false)
+        end
+        if r ~= rb and shouldpop(self, rb) then
+            self:reg(rb, false)
         end
         return s, rb
     end
@@ -698,6 +701,13 @@ function compiler:compile_chunk()
     end
     self.code[#self.code+1] = o.RETURN(0, 1)
     self.ninsts = self.ninsts + 1
+
+    if DEBUG_REGS then
+        print("Regs:")
+        for i=0,#self.regs do
+            print("", i, self.regs[i])
+        end
+    end
 
     return chunk(self)
 end

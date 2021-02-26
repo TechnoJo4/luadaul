@@ -135,15 +135,23 @@ function irc:resolve(name, set)
         end
     end
     for i=#self.upvals,1,-1 do
-        if self.upvals[i].name == name then
-            return set and IR.SETUPVAL or IR.GETUPVAL, i-1
+        local u = self.upvals[i]
+        if u.name == name then
+            if set then
+                while u.upval and not u.mutable do
+                    u = self.parent.upvals[u.i]
+                    u.mutable = true
+                end
+                return IR.SETUPVAL, i-1
+            end
+            return IR.GETUPVAL, i-1
         end
     end
     if self.parent then
         local ir, i = self.parent:resolve(name, set)
         if i then
             local ir2 = set and IR.SETUPVAL or IR.GETUPVAL
-            self.upvals[#self.upvals+1] = { name=name, i=i, upval=ir == ir2 }
+            self.upvals[#self.upvals+1] = { name=name, i=i, upval=ir == ir2, mutable=set }
             self.nupvals = self.nupvals + 1
             return ir2, self.nupvals-1
         end

@@ -27,6 +27,8 @@ local function getline(file, pos)
     -- length of a tab in the terminal can vary,
     -- so we just replace them with spaces to avoid
     -- the caret not being aligned with the error
+    -- in the future, use magic to make this respect
+    -- some sort of tab length volume and align correct
     local line = file:sub(s, e):gsub("\t", " ")
     return line, pos - s
 end

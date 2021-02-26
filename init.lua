@@ -1,7 +1,7 @@
 local T = require("parse.token")
 local parse = require("parse.parser")
 local ir = require("emit.ir")
-local lua51 = require("emit.lua51")
+local lua = require("emit.lua51")
 
 -- warning: this is horrible and very temporary
 
@@ -35,13 +35,27 @@ if argv[1] then
     local parser = parse.new_parser(source)
     local irc = ir.new_irc()
 
+    local ptime = 0
+    local itime = 0
     while parser.lexer.get(1).type ~= T.EOF do
-        irc:stmt(parser:stmt())
+        local t1 = os.clock()
+        local stmt = parser:stmt()
+        local t2 = os.clock()
+        ptime = t2 - t1 + ptime
+        irc:stmt(stmt)
+        itime = os.clock() - t2 + itime
     end
+    local ltime = parser.lexer.time()
+    print("Lexer   ", ltime)
+    print("Parser  ", ptime)
+    print("IR      ", itime)
 
-    local bcc = lua51.new_compiler(irc, true)
+    ltime = os.clock()
+    local bcc = lua.new_compiler(irc, true)
+    local bc = bcc:compile_main("@"..f_in)
+    print("Bytecode", os.clock() - ltime)
     f = io.open(f_out, "wb")
-    f:write(bcc:compile_main("@"..f_in))
+    f:write(bc)
     f:close()
 else
     -- no repl because compiler can't run on lua51 and no luajit emitter
