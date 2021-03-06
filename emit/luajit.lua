@@ -18,15 +18,14 @@ local double_t = ffi.typeof('double[1]')
 
 local u8 = string.char
 local function u16(num)
-    return u8(band(rshift(num, 8), 0xff) .. u8(band(num, 0xff)))
+    return u8(band(num, 0xff))
+        .. u8(band(rshift(num, 8), 0xff))
 end
 local function i32(num)
-    local t = {}
-    t[#t+1] = u8(bit.band(num, 0xff))
-    for i=8, 32-8, 8 do
-        t[#t+1] = u8(bit.band(bit.rshift(num, i), 0xff))
-    end
-    return table.concat(t)
+    return u8(band(num, 0xff))
+        .. u8(band(rshift(num, 8), 0xff))
+        .. u8(band(rshift(num, 16), 0xff))
+        .. u8(band(rshift(num, 24), 0xff))
 end
 local function u64(num)
     return i32(num).."\0\0\0\0"
@@ -70,7 +69,7 @@ local function uleb128(num)
     repeat
         local byte = band(num, 0x7f)
         num = rshift(num, 7)
-        bytes[#bytes+1] = u8(num == 0 and byte or bor(b, 0x80))
+        bytes[#bytes+1] = u8(num == 0 and byte or bor(byte, 0x80))
     until num <= 0
     return table.concat(bytes, "")
 end
@@ -259,13 +258,9 @@ local function chunk(data, strip)
                  [debuglenU [firstlineU numlineU]]
     ]=]
     local function reverse(tbl)
-        local len = 0
-        while tbl[len] do len = len + 1 end
-        len = len - 1
-
         local new = {}
-        for i=0,len do
-            new[len - i + 1] = tbl[i]
+        for i=1,#tbl do
+            new[#tbl - i + 1] = tbl[i]
         end
         return new
     end
@@ -308,7 +303,7 @@ local function new_compiler(irc)
     for k,v in pairs(irc.protos) do
         self.flags = 0x01 -- PROTO_CHILD
         self.protos[k] = new_compiler(v):compile_chunk()
-        self.kobj[#self.kobj] = uleb128(KOBJ.CHILD)
+        self.kobj[#self.kobj+1] = uleb128(KOBJ.CHILD)
     end
 
     for k,v in pairs(irc.upvals) do
@@ -331,24 +326,24 @@ local function new_compiler(irc)
                 -- this wastes a slot in constant table if the constant is never used in an
                 -- operation that takes a constant index operand, but compiling 1 + v
                 -- as KSHORT, ADDVV instead of just ADDVN is certainly more wasteful,
-                -- and i'm really not willing to start analyzing the entire IR
-                -- beforehand just to know if that's the case and save 2 bytes
-                self.knum[#self.knum] = uleb128_33(v, 0)
+                -- and i'm really not willing to start analyzing the entire IR beforehand
+                -- just to know if that's the case and save 2 bytes of the final bc dump
                 self.const_i[k] = #self.knum
+                self.knum[#self.knum+1] = uleb128_33(v, 0)
             elseif is_int(v) then
-                self.knum[#self.knum] = uleb128_33(v, 0)
                 self.const_t[k] = opcodes.KNUM
                 self.const_i[k] = #self.knum
+                self.knum[#self.knum+1] = uleb128_33(v, 0)
             else
                 local lo, hi = f64_b(v)
-                self.knum[#self.knum] = uleb128_33(lo, 1)..uleb128(hi)
                 self.const_t[k] = opcodes.KNUM
                 self.const_i[k] = #self.knum
+                self.knum[#self.knum+1] = uleb128_33(lo, 1)..uleb128(hi)
             end
         elseif t == "string" then
             self.const_t[k] = opcodes.KSTR
             self.const_i[k] = #self.kobj
-            self.kobj[#self.kobj] = uleb128(KOBJ.STR + #v)..v
+            self.kobj[#self.kobj+1] = uleb128(KOBJ.STR + #v)..v
         else
             error()
         end
@@ -370,13 +365,13 @@ function compiler:compile(ir, r, ...)
             -- TODO
             return self:compile_cond(ir, r or true, false, ...)
         else
-            error(("No lua51 compile rule for %s"):format(ir[1])) -- TODO: error
+            error(("No luajit compile rule for %s"):format(ir[1])) -- TODO: error
         end
     end
     return func(self, ir, r, ...)
 end
 
-local DEBUG_REGS = true
+local DEBUG_REGS = false
 function compiler:reg(r, v)
     if v == nil then v = true end
     if r then
@@ -417,6 +412,11 @@ compiler.comp[IR.CONST] = function(self, v, r)
         v = self.const_i[v[2]]
     end
     return o[opcodes[op]](r, v), r
+end
+
+compiler.comp[IR.CLOSURE] = function(self, v, r)
+    r = r or self:reg()
+    return o.FNEW(v[2]), r
 end
 
 -- check constant type
@@ -498,12 +498,118 @@ compiler.comp[IR.UNM] = unop("UNM")
 compiler.comp[IR.LEN] = unop("LEN")
 compiler.comp[IR.NOT] = unop("NOT") -- TODO: also add compiler.cond rule
 
+function compiler:localreg(idx)
+    for i=1,#self.local_offsets do
+        local o = self.local_offsets[i]
+        if idx >= o[1] then
+            idx = idx + o[2]
+        end
+    end
+    return idx
+end
+
 compiler.comp[IR.GETGLOBAL] = function(self, v, r)
     r = r or self:reg()
     return o.GGET(r, self.const_i[v[2]]), r
 end
 
--- TODO
+compiler.comp[IR.SETGLOBAL] = function(self, v, r)
+    local code, a = self:compile(v[3], r)
+    return o.GSET(a, self.const_i[v[2]]), a
+end
+
+compiler.comp[IR.GETLOCAL] = function(self, v, r)
+    local l = self:localreg(v[2])
+    if not r or r == l then
+        return "", l
+    else
+        return o.MOV(r, l), r
+    end
+end
+
+compiler.comp[IR.SETLOCAL] = function(self, v, r)
+    local n = self:localreg(v[2])
+    if not r or r == n then
+        return self:compile(v[3], n)
+    else
+        local code, a = self:compile(v[3], r)
+        return code..o.MOV(n, r), r
+    end
+end
+
+compiler.comp[IR.GETTABLE] = function(self, v, ra)
+    local b, rb = self:compile(v[2])
+    ra = ra or rb
+    local n = tconst(self, v[3], opcodes.KNUM)
+    if n and self.kshort[v[3][2]] >= 0 and self.kshort[v[3][2]] <= 255 then
+        return b..o.TGETB(ra, rb, self.kshort[v[3][2]]), ra
+    end
+    n = tconst(self, v[3], opcodes.KSTR)
+    if n then
+        return b..o.TGETS(ra, rb, n), ra
+    end
+
+    local c, rc = self:compile(v[3])
+    return b..c..o.TGETV(ra, rb, rc), ra
+end
+
+compiler.comp[IR.SETTABLE] = function(self, v, ra)
+    local a, ra = self:compile(v[4], ra)
+    local b, rb = self:compile(v[2])
+    local n = tconst(self, v[3], opcodes.KNUM)
+    if n and self.kshort[v[3][2]] >= 0 and self.kshort[v[3][2]] <= 255 then
+        return b..o.TGETB(ra, rb, self.kshort[v[3][2]]), ra
+    end
+    n = tconst(self, v[3], opcodes.KSTR)
+    if n then
+        return b..o.TGETS(ra, rb, n), ra
+    end
+
+    local c, rc = self:compile(v[3])
+    return b..c..o.TGETV(ra, rb, rc), ra
+end
+
+compiler.comp[IR.CALL] = function(self, v, a)
+    a = a or self:reg()
+    local target, a = self:compile(v[2], a)
+    local c, nargs = 1, 0
+    local bc = { target }
+    if #v > 3 then
+        for i=4,#v do
+            local code, r = self:compile(v[i], self:reg(a + i - 3))
+            bc[i - 2] = code
+            c = i - 2
+            nargs = nargs + 1
+        end
+    end
+    local nrets = v[3]
+    local max = math.max(nargs+1, nrets)
+    for i=0,max-1 do
+        self.regs[a+i] = i < nrets
+    end
+    return table.concat(bc, "")..o.CALL(a, v[3]+1, c), a
+end
+
+compiler.comp[IR.NAMECALL] = function(self, v, a)
+    local from, b = self:compile(v[2], self:reg(a + 1))
+    local target = o.TGETS(a, b, self.const_i[v[3]])
+    local c, nargs = 2, 1
+    local bc = { from, target }
+    if #v > 4 then
+        for i=5,#v do
+            local code, r = self:compile(v[i], self:reg(a + i - 3))
+            bc[i - 2] = code
+            c = i - 2
+            nargs = nargs + 1
+        end
+    end
+    local nrets = v[4]
+    local max = math.max(nargs+1, nrets)
+    for i=0,max-1 do
+        self.regs[a+i] = i < nrets
+    end
+    return table.concat(bc, "")..o.CALL(a, v[4]+1, c), a
+end
 
 function compiler:compile_chunk()
     for i,v in ipairs(self.irc.ir) do
@@ -514,7 +620,7 @@ function compiler:compile_chunk()
     local last = self.code[#self.code]
     last = string.byte(last:sub(-4,-4))
     if last ~= opcodes.RET0 and last ~= opcodes.RET1 and last ~= opcodes.RET and last ~= opcodes.RETM then
-        self.code[#self.code+1] = o.RET0(0, 0)
+        self.code[#self.code+1] = o.RET0(0, 1)
         self.ninsts = self.ninsts + 1
     end
 

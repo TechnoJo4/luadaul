@@ -609,7 +609,7 @@ end
 
 compiler[IR.GETLOCAL] = function(self, v, r)
     local l = self:localreg(v[2])
-    if not r then
+    if not r or r == l then
         return "", l
     else
         return o.MOVE(r, l), r

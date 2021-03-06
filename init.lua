@@ -1,7 +1,7 @@
 local T = require("parse.token")
 local parse = require("parse.parser")
 local ir = require("emit.ir")
-local lua = require("emit.lua51")
+local lua = require("emit.luajit")
 
 -- warning: this is horrible and very temporary
 
