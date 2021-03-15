@@ -19,6 +19,7 @@ local enum = require("common.utils").enum({
     "Export",
     "Let",
     "Type",
+    "New",
     "Of",
     "Nil",
     "True",

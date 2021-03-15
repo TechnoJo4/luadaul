@@ -2,8 +2,8 @@
 
 local T = require("parse.token")
 local ast = require("parse.ast")
-local opts = require("emit.iropts")
-local IR = require("emit.irinsts")
+local opts = require("ir.optimize")
+local IR = require("ir.insts")
 
 local ET = ast.expr_types
 
@@ -12,8 +12,8 @@ local inst_meta = { __tostring=function(self)
     for k,v in pairs(self) do
         if type(v) == "table" and (not getmetatable(v) or not getmetatable(v).__tostring) then
             local s = {}
-            for i,v in pairs(v) do
-                s[i] = tostring(v)
+            for i,v2 in pairs(v) do
+                s[i] = tostring(v2)
             end
             t[k] = "["..table.concat(s, ", ").."]"
         else
@@ -71,7 +71,7 @@ local function new_irc(parent, args)
     }, irc_meta)
 
     if args and #args > 0 then
-        for i,v in ipairs(args) do
+        for _, v in ipairs(args) do
             self.ir[#self.ir+1] = self:inst({ IR.PUSH, self:declare(v.name) })
         end
     end
@@ -107,8 +107,12 @@ function irc:end_scope()
             locals[#locals] = nil
         end
 
-        if #pop > 1 then code[#code+1] = pop end
-        if #close > 1 then code[#code+1] = close end
+        if #pop > 1 then
+            code[#code+1] = pop
+        end
+        if #close > 1 then
+            code[#code+1] = close
+        end
     end
     self.nlocals[depth] = nil
     self.depth = depth - 1
@@ -187,8 +191,7 @@ function irc:expr(expr)
     if not func then
         error(("No IR compile rule for %s"):format(t)) -- TODO: error
     end
-    local ir, t = func(self, expr)
-    return self:inst(ir), t
+    return self:inst(func(self, expr))
 end
 
 function irc:stmt(stmt, ret)
@@ -213,7 +216,7 @@ end
 
 function irc:closure(args)
     local n = 0
-    for _,v in pairs(self.protos) do
+    for _,_ in pairs(self.protos) do
         n = n + 1
     end
     if n >= 255 then
@@ -226,8 +229,12 @@ end
 
 irc[ET.Expression] = function(self, stmt)
     local v = self:expr(stmt[2])
-    if v[1] == IR.CALL then v[3] = 0 end
-    if v[1] == IR.NAMECALL then v[4] = 0 end
+    if v[1] == IR.CALL then
+        v[3] = 0
+    end
+    if v[1] == IR.NAMECALL then
+        v[4] = 0
+    end
     return { IR.POP, v }
 end
 
@@ -235,15 +242,15 @@ irc[ET.Return] = function(self, stmt)
     return { IR.RETURN, self:expr(stmt[2]) }
 end
 
-irc[ET.Break] = function(self, stmt)
+irc[ET.Break] = function(self, _stmt)
     return { IR.BREAK }
 end
 
-irc[ET.Block] = function(self, stmt)
+irc[ET.Block] = function(self, block)
     local c = {}
     self:start_scope()
     local i = 1
-    for _,stmt in ipairs(stmt.stmts) do
+    for _,stmt in ipairs(block.stmts) do
         local ir = { self:stmt(stmt, true) }
         for _,v in ipairs(ir) do
             c[i] = v
@@ -289,13 +296,13 @@ irc[ET.ForIter] = function(self, stmt)
         iter[4] = 3
     end
 
-    for _, name in pairs(stmt.names) do
+    for _,name in pairs(stmt.names) do
         self:declare(name.name)
     end
 
     local stmts = { self:stmt(stmt.body, true) }
 
-    for _, name in pairs(stmt.names) do
+    for _,_ in pairs(stmt.names) do
         self.locals[#self.locals] = nil
         self.nlocals[self.depth] = self.nlocals[self.depth] - 1
     end
@@ -317,12 +324,12 @@ irc[ET.While] = function(self, stmt)
 end
 
 irc[ET.Lambda] = function(self, stmt)
-    local irc, n = self:closure(stmt.args)
-    for i, v in ipairs(stmt.stmts) do
-        irc:stmt(v)
+    local closure_irc, n = self:closure(stmt.args)
+    for _,v in ipairs(stmt.stmts) do
+        closure_irc:stmt(v)
     end
     local code = { IR.CLOSURE, n }
-    for i, v in ipairs(irc.upvals) do
+    for i,v in ipairs(closure_irc.upvals) do
         code[i+2] = self:inst({ v.upval and IR.GETUPVAL or IR.GETLOCAL, v.i })
     end
     return code

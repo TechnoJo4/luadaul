@@ -1,12 +1,11 @@
+--# selene: allow(bad_string_escape, unused_variable)
 -- spaghetti
 
 local bit = require("bit")
 local ffi = require("ffi")
-local irc = require("emit.ir")
+local IR = require("ir.insts")
 local base = require("emit.base")
 local enum = require("common.utils").enum
-local same = base.same
-local IR = irc.IR
 
 local bor, band, rshift, lshift = bit.bor, bit.band, bit.rshift, bit.lshift
 
@@ -27,13 +26,7 @@ local function i32(num)
         .. u8(band(rshift(num, 16), 0xff))
         .. u8(band(rshift(num, 24), 0xff))
 end
-local function u64(num)
-    return i32(num).."\0\0\0\0"
-end
 
-local function f64(num)
-    return ffi.string(double_t({ num }), 8)
-end
 local function f64_b(num)
     local v = double_t({ num })
     local data = ffi.cast('uint8_t*', v)
@@ -43,7 +36,8 @@ local function f64_b(num)
     return lo[0], hi[0]
 end
 
-local p = p or function()end
+-- selene:allow(undefined_variable)
+local p = p or function() end
 
 --[==[
     bytecode dump format description from lj_bcdump.h
@@ -75,8 +69,9 @@ local function uleb128(num)
 end
 
 local function uleb128_33(num, b)
-    local byte = u8(bor(lshift(band(num, 0x3f), 1), b)) -- ((num & 0x3f) << 1) | b
-    local bytes = { byte }
+    local bytes = { -- ((num & 0x3f) << 1) | b
+        u8(bor(lshift(band(num, 0x3f), 1), b))
+    }
     num = rshift(num, 6)
     while num > 0 do
         local byte = band(num, 0x7f)
@@ -95,10 +90,7 @@ local function is_int16(num)
 end
 
 local size_ABC = 8
-local size_D = 2 * size_ABC
-
 local size_OP = 8
-local mask_OP = lshift(1, size_OP)-1
 
 local pos_OP = 0
 local pos_A = pos_OP + size_OP
@@ -197,7 +189,9 @@ local modes = {
 }
 
 local function str_tohex(s)
-    return s:gsub(".", function(c) return bit.tohex(string.byte(c)):sub(-2,-1) end)
+    return s:gsub(".", function(c)
+        return bit.tohex(string.byte(c)):sub(-2,-1)
+    end)
 end
 
 local DEBUG_INSTS = true
@@ -210,8 +204,8 @@ for k,v in pairs(opcodes) do
         if mode == BC_ABC then
             f = iABC
         elseif mode == BC_AJ then
-            f = function(o, a, d)
-                return iABx(o, a, d)
+            f = function(op, a, d)
+                return iAD(op, a, d) -- TODO
             end
         end
 
@@ -234,8 +228,8 @@ local function getop(inst)
 end
 
 local function is_jmp(inst)
-    local o = getop(inst)
-    return o == o.JMP or o == 255 -- 0xFF is break placeholder and replaced with JMP
+    local op = getop(inst)
+    return op == o.JMP or op == 255 -- 0xFF is break placeholder and replaced with JMP
 end
 
 local VKNIL, VKFALSE, VKTRUE = 0, 1, 2
@@ -249,8 +243,7 @@ local KTAB = enum({
 }, false, true)
 
 -- see lj_bcwrite.c
-local DEBUG_IPLINES = true
-local function chunk(data, strip)
+local function chunk(data, _strip)
     --[=[
         proto  = lengthU pdata
         pdata  = phead bcinsW* uvdataH* kgc* knum* [debugB*]
@@ -345,7 +338,7 @@ local function new_compiler(irc)
             self.const_i[k] = #self.kobj
             self.kobj[#self.kobj+1] = uleb128(KOBJ.STR + #v)..v
         else
-            error()
+            error("invalid constant")
         end
     end
     return self
@@ -357,7 +350,10 @@ end
 
 local DEBUG_IR = false
 function compiler:compile(ir, r, ...)
-    if DEBUG_IR then print(ir) end
+    if DEBUG_IR then
+        print(ir)
+    end
+
     local t = ir[1]
     local func = self.comp[t]
     if not func then
@@ -371,9 +367,15 @@ function compiler:compile(ir, r, ...)
     return func(self, ir, r, ...)
 end
 
+function compiler:compile_cond() --(ir, tobool, invert, ...)
+end
+
 local DEBUG_REGS = false
 function compiler:reg(r, v)
-    if v == nil then v = true end
+    if v == nil then
+        v = true
+    end
+
     if r then
         if r > 255 then
             error("Cannot allocate register "..tostring(r))
@@ -388,19 +390,34 @@ function compiler:reg(r, v)
         return r
     end
 
-    for r=0,255 do
-        if not self.regs[r] then
+    for i=0,255 do
+        if not self.regs[i] then
             if DEBUG_REGS then
-                print("alloc", r, self.regs[r], "->", v)
+                print("alloc", i, self.regs[i], "->", v)
             end
-            self.regs[r] = v
-            if self.maxstack <= r then
-                self.maxstack = r+1
+            self.regs[i] = v
+            if self.maxstack <= i then
+                self.maxstack = i+1
             end
-            return r
+            return i
         end
     end
     error("Could not allocate register")
+end
+
+compiler[IR.FALSE] = function(self, _v, r)
+    r = r or self:reg()
+    return o.KPRI(r, VKFALSE), r
+end
+
+compiler[IR.TRUE] = function(self, _v, r)
+    r = r or self:reg()
+    return o.KPRI(r, VKTRUE), r
+end
+
+compiler[IR.NIL] = function(self, _v, r)
+    r = r or self:reg()
+    return o.KPRI(r, VKNIL), r
 end
 
 compiler.comp[IR.CONST] = function(self, v, r)
@@ -414,6 +431,18 @@ compiler.comp[IR.CONST] = function(self, v, r)
     return o[opcodes[op]](r, v), r
 end
 
+compiler[IR.CLOSE] = function(self, ir)
+    local min = 256
+    for i=2,#ir do
+        local r = ir[i]
+        self:reg(r, false)
+        if min > r then
+            min = r
+        end
+    end
+    return o.UCLO(min)
+end
+
 compiler.comp[IR.CLOSURE] = function(self, v, r)
     r = r or self:reg()
     return o.FNEW(v[2]), r
@@ -424,9 +453,10 @@ local function tconst(self, ir, t)
     if ir[1] ~= IR.CONST then return false end
 
     local ct = self.const_t[ir[2]]
-    if ct == opcodes.KSHORT then ct = opcodes.KNUM end
-    if ct == t then return self.const_i[ir[2]] end
-    return false
+    if ct == opcodes.KSHORT then
+        ct = opcodes.KNUM
+    end
+    return ct == t and self.const_i[ir[2]]
 end
 
 compiler.comp[IR.RETURN] = function(self, v)
@@ -482,7 +512,8 @@ local function binop(name)
 end
 local function unop(inst)
     return function(self, v, r)
-        local a, r = self:compile(v[2], r)
+        local a
+        a, r = self:compile(v[2], r)
         local s = a..inst(r, r)
         return s, r
     end
@@ -500,9 +531,9 @@ compiler.comp[IR.NOT] = unop("NOT") -- TODO: also add compiler.cond rule
 
 function compiler:localreg(idx)
     for i=1,#self.local_offsets do
-        local o = self.local_offsets[i]
-        if idx >= o[1] then
-            idx = idx + o[2]
+        local off = self.local_offsets[i]
+        if idx >= off[1] then
+            idx = idx + off[2]
         end
     end
     return idx
@@ -515,7 +546,7 @@ end
 
 compiler.comp[IR.SETGLOBAL] = function(self, v, r)
     local code, a = self:compile(v[3], r)
-    return o.GSET(a, self.const_i[v[2]]), a
+    return code..o.GSET(a, self.const_i[v[2]]), a
 end
 
 compiler.comp[IR.GETLOCAL] = function(self, v, r)
@@ -554,29 +585,33 @@ compiler.comp[IR.GETTABLE] = function(self, v, ra)
 end
 
 compiler.comp[IR.SETTABLE] = function(self, v, ra)
-    local a, ra = self:compile(v[4], ra)
     local b, rb = self:compile(v[2])
+
+    local a
+    a, ra = self:compile(v[4], ra)
+
     local n = tconst(self, v[3], opcodes.KNUM)
     if n and self.kshort[v[3][2]] >= 0 and self.kshort[v[3][2]] <= 255 then
-        return b..o.TGETB(ra, rb, self.kshort[v[3][2]]), ra
+        return a..b..o.TGETB(ra, rb, self.kshort[v[3][2]]), ra
     end
     n = tconst(self, v[3], opcodes.KSTR)
     if n then
-        return b..o.TGETS(ra, rb, n), ra
+        return a..b..o.TGETS(ra, rb, n), ra
     end
 
     local c, rc = self:compile(v[3])
-    return b..c..o.TGETV(ra, rb, rc), ra
+    return a..b..c..a..o.TGETV(ra, rb, rc), ra
 end
 
 compiler.comp[IR.CALL] = function(self, v, a)
     a = a or self:reg()
-    local target, a = self:compile(v[2], a)
+    local target
+    target, a = self:compile(v[2], a)
     local c, nargs = 1, 0
     local bc = { target }
     if #v > 3 then
         for i=4,#v do
-            local code, r = self:compile(v[i], self:reg(a + i - 3))
+            local code = self:compile(v[i], self:reg(a + i - 3))
             bc[i - 2] = code
             c = i - 2
             nargs = nargs + 1
@@ -597,7 +632,7 @@ compiler.comp[IR.NAMECALL] = function(self, v, a)
     local bc = { from, target }
     if #v > 4 then
         for i=5,#v do
-            local code, r = self:compile(v[i], self:reg(a + i - 3))
+            local code = self:compile(v[i], self:reg(a + i - 3))
             bc[i - 2] = code
             c = i - 2
             nargs = nargs + 1
@@ -613,7 +648,7 @@ end
 
 function compiler:compile_chunk()
     for i,v in ipairs(self.irc.ir) do
-        local code, reg = self:compile(v)
+        local code = self:compile(v)
         self.code[i] = code
         self.ninsts = self.ninsts + #code / 4
     end

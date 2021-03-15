@@ -1,11 +1,9 @@
 local T = require("parse.token")
 local token = require("parse.ast").token
-local utils = require("common.utils")
-local chrtbl, enum = utils.chrtbl, utils.enum
 
 local errors = require("common.errors")
 local error_t = errors.types.syntax_error
-local function error(...)
+local function err(...)
     errors.at_pos(...)
     os.exit(1)
 end
@@ -15,6 +13,7 @@ local sbyte = string.byte
 local keywords = {
     ["of"] = T.Of,
     ["let"] = T.Let,
+    ["new"] = T.New,
     ["typedef"] = T.Type,
     ["export"] = T.Export,
     ["return"] = T.Return,
@@ -52,6 +51,7 @@ local escapes = {
     [sbyte("v")] = "\v",
 }
 
+--local grave = sbyte("`")
 local single_quote = sbyte("'")
 local double_quote = sbyte('"')
 
@@ -118,8 +118,15 @@ local function lex_rep(source, pos, line, column, check, ttype, key, action, pre
         until not check(c)
 
         local str = source:sub(start, pos - 1)
-        if action then str = action(pre and pre..str or str) end
-        if not ttype then return str, pos - start, startl, startc end
+
+        if action then
+            str = action(pre and pre..str or str)
+        end
+
+        if not ttype then
+            return str, pos - start, startl, startc
+        end
+
         return token({
             type = ttype, [key] = str,
             pos = start, len = pos - start,
@@ -167,32 +174,32 @@ local function get_next(source, pos, line, column)
             column = column + 1
             c = sbyte(source, pos)
             if pos > len then
-                error(source, pos, line, column, error_t, "Unfinished string")
+                err(source, pos, line, column, error_t, "Unfinished string")
             end
 
             if escape then
                 if escapes[c] then
                     data = data .. escapes[c]
                 elseif digit_nodot(c) then
-                    local n = lex_rep(source, pos, line, column, digit_nodot, nil, nil, tonumber)
+                    local n, pos_, line_, column_ = lex_rep(source, pos, line, column, digit_nodot, nil, nil, tonumber)
                     if n > 255 then
-                        error(source, pos, line, column, error_t, "Invalid escape")
+                        err(source, pos, line, column, error_t, "Invalid escape")
                     end
                     data = data .. string.char(n)
-                    pos = ret[2] - 1
+                    pos, line, column = pos_ - 1, line_, column_ - 1
                 elseif c == 'x' then
                     local s = source:sub(pos+1, pos+2)
                     if #s ~= 2 then
-                        error(source, pos, line, column, error_t, "Unfinished string")
+                        err(source, pos, line, column, error_t, "Unfinished string")
                     end
                     local n = tonumber("0x"..s)
                     if not n or n > 255 then
-                        error(source, pos, line, column, error_t, "Invalid escape")
+                        err(source, pos, line, column, error_t, "Invalid escape")
                     end
                     data = data .. string.char(n)
                     pos = pos + 2
                 else
-                    error(source, pos, line, column, error_t, "Invalid escape")
+                    err(source, pos, line, column, error_t, "Invalid escape")
                 end
                 escape = false
             elseif c == "\\" then
@@ -266,8 +273,7 @@ local function get_next(source, pos, line, column)
             if ret[1] then
                 return unpack(ret)
             else
-                p(ret)
-                error(source, ret[2], ret[3], ret[4], error_t, "Invalid hexadecimal literal")
+                err(source, ret[2], ret[3], ret[4], error_t, "Invalid hexadecimal literal")
             end
         elseif not digit(c) then
             return token({
@@ -289,7 +295,7 @@ local function get_next(source, pos, line, column)
             c = sbyte(source, pos)
             if c == dot then
                 if hasdot then
-                    error(source, pos, line, column, error_t, "Invalid number literal (more than one '.')")
+                    err(source, pos, line, column, error_t, "Invalid number literal (more than one '.')")
                 else
                     hasdot = true
                 end
@@ -309,7 +315,7 @@ local function get_next(source, pos, line, column)
         }), pos, line, column
     end
 
-    error(source, pos, line, column, error_t, "Unexpected character '"..sbyte(source, pos).."'")
+    err(source, pos, line, column, error_t, "Unexpected character '"..sbyte(source, pos).."'")
 end
 
 local function get_all(source)

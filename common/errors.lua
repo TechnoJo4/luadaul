@@ -1,3 +1,5 @@
+--# selene: allow(multiple_statements)
+
 local types = require("common.utils").enum({
     "syntax_error",
     "compile_error",
@@ -19,6 +21,7 @@ local function getline(file, pos)
 
     -- skip start whitespace
     for i=s,pos do
+        local c = file:sub(i, i)
         if c == " " or c == "\t" then
             s = i + 1
         else break end
@@ -50,7 +53,7 @@ end
 
 -- print error message with prefix indicating type
 local function message(t, msg, at, filename)
-    local t = type_str(t)
+    t = type_str(t)
     if at then t = t .. " at " .. at end
     if filename then t = t .. " in " .. filename end
     io.write(t .. ":" .. reset .. " " .. msg .. "\n")
@@ -63,7 +66,7 @@ local function printline(str, column, color, len)
 end
 
 -- print an error from a position (in the lexer)
-local function pos(src, pos, line, col, t, msg, filename)
+local function at_pos(src, pos, line, col, t, msg, filename)
     message(t, msg, line .. ":" .. col, filename)
 
     local l, c = getline(src, pos)
@@ -71,7 +74,7 @@ local function pos(src, pos, line, col, t, msg, filename)
 end
 
 -- print an error from a token (in the parser/compiler)
-local function token(src, tok, t, msg, filename, after)
+local function at_token(src, tok, t, msg, filename, after)
     message(t, msg, tok.line .. ":" .. (after and tok.column + tok.len or tok.column), filename)
 
     local l, c = getline(src, tok.pos)
@@ -83,9 +86,8 @@ local function token(src, tok, t, msg, filename, after)
 end
 
 return {
-    at_pos=pos,
-    at_token=token,
-    show_line=line,
+    at_pos=at_pos,
+    at_token=at_token,
     message=message,
     types=types
 }

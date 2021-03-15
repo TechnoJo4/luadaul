@@ -1,6 +1,5 @@
 -- table from characters in string
 local function chrtbl(str)
-    local i = 1
     local tbl = {}
     for i=1,#str do
         tbl[i] = str:sub(i, i)
@@ -17,6 +16,7 @@ end
 local function enum(tbl, bi, nomt)
     local new = {}
     for k,v in pairs(tbl) do
+        -- selene: allow(multiple_statements)
         local t = nomt and k or setmetatable({k}, {
             __lt = function(a, b)
                 if type(a) == "table" then a = a[1] end

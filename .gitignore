@@ -1,0 +1,16 @@
+*.sublime-*
+
+*.txt
+
+# compiled bytecode
+*.raw
+*.luac
+examples/*.lua
+
+# compiler benchmark files
+examples/*lines.daul
+
+# lua and daul files in the root (except init) are usually temporary and/or for testing
+/*.lua
+/*.daul
+!init.lua

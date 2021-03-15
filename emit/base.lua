@@ -1,5 +1,7 @@
-local IR = require("emit.irinsts")
-local PUSH = setmetatable({}, { __tostring=function() return "[PUSH]" end })
+local IR = require("ir.insts")
+local PUSH = setmetatable({}, { __tostring=function()
+    return "[PUSH]"
+end })
 
 local function same(a, b)
     local t = a[1]

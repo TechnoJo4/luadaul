@@ -1,11 +1,11 @@
+--# selene: allow(bad_string_escape)
 -- spaghetti
 
 local bit = require("bit")
 local ffi = require("ffi")
-local irc = require("emit.ir")
+local IR = require("ir.insts")
 local base = require("emit.base")
 local same = base.same
-local IR = irc.IR
 
 local PUSH = base.PUSH
 
@@ -29,8 +29,6 @@ end
 local inst_s = i32
 
 local size_C = 9
-local size_B = 9
-local size_Bx = size_C + size_B
 local size_A = 8
 
 local size_OP = 6
@@ -130,7 +128,9 @@ local ABx_ops = { ["LOADK"]=true, ["GETGLOBAL"]=true, ["SETGLOBAL"]=true, ["CLOS
 local AsBx_ops = { ["JMP"]=true, ["FORLOOP"]=true, ["FORPREP"]=true }
 
 local function str_tohex(s)
-    return s:gsub(".", function(c) return bit.tohex(string.byte(c)):sub(-2,-1) end)
+    return s:gsub(".", function(c)
+        return bit.tohex(string.byte(c)):sub(-2,-1)
+    end)
 end
 
 -- warning: debug printing not in the same order as the bytecode
@@ -141,8 +141,8 @@ for k,v in pairs(opcodes) do
     if ABx_ops[v] then
         f = iABx
     elseif AsBx_ops[v] then
-        f = function(o, a, b)
-            return iABx(o, a, b + 131071)
+        f = function(op, a, b)
+            return iABx(op, a, b + 131071)
         end
     end
     local padded = v..(" "):rep(10-#v)
@@ -222,7 +222,7 @@ local function new_compiler(irc, x64)
         elseif t == "string" then
             self.constants[k+1] = "\x04"..str(v, size_t)
         else
-            error()
+            error("invalid constant type")
         end
     end
     return self
@@ -235,7 +235,9 @@ end
 -- tobool: convert to boolean
 -- invert: skip next if false instead of skip next if true
 function compiler:compile_cond(ir, tobool, invert, ...)
-    if tobool then invert = not invert end
+    if tobool then
+        invert = not invert
+    end
     local t = ir[1]
     local code
     local func = self.cond[t]
@@ -254,7 +256,9 @@ function compiler:compile_cond(ir, tobool, invert, ...)
         code = func(self, ir, invert, ...)
     end
     if tobool then
-        if tobool == true then tobool = self:reg() end
+        if tobool == true then
+            tobool = self:reg()
+        end
         code = code..o.JMP(0,1)..o.LOADBOOL(tobool, 1, 1)..o.LOADBOOL(tobool, 0, 0)
     end
     return code, tobool
@@ -262,7 +266,10 @@ end
 
 local DEBUG_IR = false
 function compiler:compile(ir, r, ...)
-    if DEBUG_IR then print(ir) end
+    if DEBUG_IR then
+        print(ir)
+    end
+
     local t = ir[1]
     local func = self[t]
     if not func then
@@ -288,7 +295,9 @@ end
 
 local DEBUG_REGS = false
 function compiler:reg(r, v)
-    if v == nil then v = true end
+    if v == nil then
+        v = true
+    end
     if r then
         if r > 255 then
             error("Cannot allocate register "..tostring(r))
@@ -298,27 +307,31 @@ function compiler:reg(r, v)
         end
         self.regs[r] = v
         if self.maxstack <= r then
-            self.maxstack = r+1
+            self.maxstack = r + 1
         end
         return r
     end
 
-    for r=0,255 do
-        if not self.regs[r] then
+    for i=0,255 do
+        if not self.regs[i] then
             if DEBUG_REGS then
-                print("alloc", r, self.regs[r], "->", v)
+                print("alloc", i, self.regs[i], "->", v)
             end
-            self.regs[r] = v
-            if self.maxstack <= r then
-                self.maxstack = r+1
+            self.regs[i] = v
+            if self.maxstack <= i then
+                self.maxstack = i + 1
             end
-            return r
+            return i
         end
     end
     error("Could not allocate register")
 end
 
-function compiler:RK(ir, ...)
+function compiler:RK(ir, r, ...)
+    if r then
+        return self:compile(ir, r, ...)
+    end
+
     if type(ir) == "number" then
         return "", bit.bor(256, ir)
     elseif ir[1] == IR.CONST then
@@ -326,7 +339,7 @@ function compiler:RK(ir, ...)
     elseif ir[1] == IR.GETLOCAL then
         return "", self:localreg(ir[2])
     else
-        return self:compile(ir, ...)
+        return self:compile(ir, r, ...)
     end
 end
 
@@ -335,7 +348,9 @@ compiler[IR.CLOSE] = function(self, ir)
     for i=2,#ir do
         local r = ir[i]
         self:reg(r, false)
-        if min > r then min = r end
+        if min > r then
+            min = r
+        end
     end
     return o.CLOSE(min)
 end
@@ -422,7 +437,7 @@ compiler[IR.ITERFOR] = function(self, v)
         self:reg(r0+2+i, PUSH)
     end
     local off = self.local_offsets
-    self.local_offsets[#self.local_offsets+1] = { r0, 3 }
+    off[#off+1] = { r0, 3 }
 
     local code = self:compile_all(v[4], true)
     local len = #code / 4
@@ -434,7 +449,7 @@ compiler[IR.ITERFOR] = function(self, v)
     for i=0,v[3]+2 do
         self:reg(r0+i, false)
     end
-    self.local_offsets[#self.local_offsets] = nil
+    off[#off] = nil
     return code
 end
 
@@ -471,23 +486,24 @@ local function binop(inst)
 end
 local function unop(inst)
     return function(self, v, ra)
-        local a, ra = self:compile(v[2], ra)
+        local a
+        a, ra = self:compile(v[2], ra)
         local s = a..inst(ra, ra)
         return s, ra
     end
 end
 
-compiler[IR.FALSE] = function(self, v, r)
+compiler[IR.FALSE] = function(self, _v, r)
     r = r or self:reg()
     return o.LOADBOOL(r, 0, 0), r
 end
 
-compiler[IR.TRUE] = function(self, v, r)
+compiler[IR.TRUE] = function(self, _v, r)
     r = r or self:reg()
     return o.LOADBOOL(r, 1, 0), r
 end
 
-compiler[IR.NIL] = function(self, v, r)
+compiler[IR.NIL] = function(self, _v, r)
     r = r or self:reg()
     return o.LOADNIL(r, r), r
 end
@@ -517,7 +533,6 @@ compiler[IR.DIV] = binop(o.DIV)
 compiler[IR.MOD] = binop(o.MOD)
 compiler[IR.POW] = binop(o.POW)
 compiler[IR.CONCAT] = function(self, v, r)
-    local lhs, rhs = v[2], v[3]
     local move = false
     if r then
         for i=2,#v do
@@ -570,13 +585,13 @@ local function bincmp(inst, swap)
         end
         local s = a..b..inst(invert and 1 or 0, rb, rc)
 
-        if rb ~= rc and shouldpop(self, rc) then
+        if shouldpop(self, rc) then
             self:reg(rc, false)
         end
-        if r ~= rb and shouldpop(self, rb) then
+        if shouldpop(self, rb) then
             self:reg(rb, false)
         end
-        return s, rb
+        return s
     end
 end
 
@@ -589,13 +604,54 @@ compiler.cond[IR.GTEQ] = bincmp(o.LE, true)
 
 function compiler:localreg(idx)
     for i=1,#self.local_offsets do
-        local o = self.local_offsets[i]
-        if idx >= o[1] then
-            idx = idx + o[2]
+        local off = self.local_offsets[i]
+        if idx >= off[1] then
+            idx = idx + off[2]
         end
     end
     return idx
 end
+
+local function andor(c)
+    return function(self, v, ra)
+        ra = ra or self:reg()
+        local rb = self:reg()
+
+        local lhs, rhs = v[2], v[3]
+
+        -- optimize x = x or y
+        if lhs[1] == IR.GETLOCAL and ra == self:localreg(lhs[2]) then
+            local a = self:compile(rhs, ra)
+            return o.TEST(ra, 0, c)
+                .. o.JMP(0, #a / 4)
+                .. a, ra
+        end
+
+        local b = self:compile(lhs, rb)
+        self:reg(rb, false)
+        local a = self:compile(rhs, ra)
+
+        return b
+            .. o.TESTSET(ra, rb, c)
+            .. o.JMP(0, #a / 4)
+            .. a, ra
+    end
+end
+
+local function andor_cond(c)
+    return function(self, v, invert)        
+        local lhs, rhs = v[2], v[3]
+        lhs = self:compile_cond(lhs, false, c)
+        rhs = self:compile_cond(rhs, false, invert)
+        return lhs..o.JMP(0, #rhs / 4)..rhs
+    end
+end
+
+compiler[IR.AND] = andor(0)
+compiler[IR.OR] = andor(1)
+compiler.cond[IR.AND] = andor_cond(false)
+compiler.cond[IR.OR] = andor_cond(true)
+
 
 compiler[IR.GETGLOBAL] = function(self, v, a)
     a = a or self:reg()
@@ -603,7 +659,8 @@ compiler[IR.GETGLOBAL] = function(self, v, a)
 end
 
 compiler[IR.SETGLOBAL] = function(self, v, a)
-    local code, a = self:compile(v[3], a)
+    local code
+    code, a = self:compile(v[3], a)
     return code..o.SETGLOBAL(a, v[2]), a
 end
 
@@ -626,13 +683,14 @@ compiler[IR.SETLOCAL] = function(self, v, r)
     if not r or r == n then
         return self:compile(v[3], n)
     else
-        local code, a = self:compile(v[3], r)
+        local code = self:compile(v[3], r)
         return code..o.MOVE(n, r), r
     end
 end
 
 compiler[IR.SETUPVAL] = function(self, v, r)
-    local a, r = self:compile(v[3], r)
+    local a
+    a, r = self:compile(v[3], r)
     return a..o.SETUPVAL(r, v[2]), r
 end
 
@@ -643,21 +701,22 @@ compiler[IR.GETTABLE] = function(self, v, ra)
     return b..c..o.GETTABLE(ra, rb, rc), ra
 end
 
-compiler[IR.SETTABLE] = function(self, v, ra)
+compiler[IR.SETTABLE] = function(self, v, r)
     local a, ra = self:compile(v[2])
     local b, rb = self:RK(v[3])
-    local c, rc = self:RK(v[4])
-    return a..b..c..o.SETTABLE(ra, rb, rc), ra
+    local c, rc = self:RK(v[4], r)
+    return c..a..b..o.SETTABLE(ra, rb, rc), rc
 end
 
 compiler[IR.CALL] = function(self, v, a)
     a = a or self:reg()
-    local target, a = self:compile(v[2], a)
+    local target
+    target, a = self:compile(v[2], a)
     local b, nargs = 1, 0
     local bc = { target }
     if #v > 3 then
         for i=4,#v do
-            local code, r = self:compile(v[i], self:reg(a + i - 3))
+            local code = self:compile(v[i], self:reg(a + i - 3))
             bc[i - 2] = code
             b = i - 2
             nargs = nargs + 1
@@ -675,11 +734,12 @@ compiler[IR.NAMECALL] = function(self, v, a)
     local from, b = self:compile(v[2], a)
     local target = o.SELF(b, b, bit.bor(256, v[3]))
     self:reg(b + 1)
-    local b, nargs = 2, 1
+    local nargs
+    b, nargs = 2, 1
     local bc = { from, target }
     if #v > 4 then
         for i=5,#v do
-            local code, r = self:compile(v[i], self:reg(a + i - 3))
+            local code = self:compile(v[i], self:reg(a + i - 3))
             bc[i - 2] = code
             b = i - 2
             nargs = nargs + 1
@@ -695,7 +755,7 @@ end
 
 function compiler:compile_chunk()
     for i,v in ipairs(self.irc.ir) do
-        local code, reg = self:compile(v)
+        local code = self:compile(v)
         self.code[i] = code
         self.ninsts = self.ninsts + #code / 4
     end

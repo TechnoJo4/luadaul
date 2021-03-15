@@ -1,13 +1,12 @@
 local T = require("parse.token")
 local parse = require("parse.parser")
-local ir = require("emit.ir")
+local ir = require("ir.compile")
 local lua = require("emit.luajit")
 
--- warning: this is horrible and very temporary
-
-setmetatable(_G, { __newindex=function(_, k) error("tried to create global " .. k) end })
+-- warning: this file is horrible and very temporary
 
 local argv
+-- selene: allow(undefined_variable)
 if process then -- luvi/luvit support
     argv = {}
     for k,v in ipairs(process.argv) do
@@ -16,10 +15,11 @@ if process then -- luvi/luvit support
         end
     end
 else
-    argv = {...}
+    argv = { ... }
 end
 
 -- TODO: make this mess not a mess
+-- TODO: create a real arg parser
 if argv[1] then
     local f_in = argv[1]
     local f_out = "a.lua"

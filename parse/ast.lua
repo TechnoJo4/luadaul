@@ -19,7 +19,10 @@ local token_meta = {
         elseif self.type == T.Error then
             s = self.error
         end
-        if s ~= " " then s = " " .. s .. " " end
+
+        if s ~= " " then
+            s = " " .. s .. " "
+        end
         return ("%s%s@ L%dC%d"):format(T[self.type], s, self.line, self.column)
     end
 }
@@ -141,13 +144,13 @@ local ET_tostring = {
     [ET.Loop] = function(expr, lvl)
         return { "Loop", tostr(expr[2], lvl) }
     end,
-    [ET.Break] = function(expr, lvl)
+    [ET.Break] = function(_expr, _lvl)
         return { "Break" }
     end,
 }
 
 expr_tostring = function(expr, lvl)
-    if not lvl then lvl = 0 end
+    lvl = lvl or 0
     local t
     if ET[expr[1]] then
         t = ET_tostring[expr[1]](expr, lvl)
