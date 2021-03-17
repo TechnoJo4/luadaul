@@ -145,6 +145,8 @@ local function get_next(source, pos, line, column)
 
     local len = #source
     local c = sbyte(source, pos)
+
+    -- skip whitespace
     while pos <= len and spaces(c) do
         pos = pos + 1
         if c == newline then
@@ -158,6 +160,20 @@ local function get_next(source, pos, line, column)
         end
         c = sbyte(source, pos)
     end
+
+    -- comments
+    if c == sbyte("-") and sbyte(source, pos+1) == sbyte("-") then
+        while pos <= len do
+            pos = pos + 1
+            if c == newline or (c == _r and sbyte(source, pos) ~= newline) then
+                line = line + 1
+                column = 1
+                return token({ type = T.Newline, pos = pos-1, line = line, column = 0 }), pos, line, column
+            end
+            c = sbyte(source, pos)
+        end
+    end
+
     if pos > len then
         return token({ type=T.EOF, pos=pos, len=1, line=line, column=column })
     end

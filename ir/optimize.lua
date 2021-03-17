@@ -1,6 +1,7 @@
 local IR = require("ir.insts")
 
 -- http://wiki.luajit.org/Optimizations
+
 local fold = {
     [IR.ADD] = function(a, b) return a + b end,
     [IR.SUB] = function(a, b) return a - b end,
@@ -8,15 +9,6 @@ local fold = {
     [IR.DIV] = function(a, b) return a / b end,
     [IR.MOD] = function(a, b) return a % b end,
     [IR.POW] = function(a, b) return a ^ b end,
-
-    [IR.EQ] = function(a, b) return a == b end,
-    [IR.NEQ] = function(a, b) return a ~= b end,
-    [IR.LT] = function(a, b) return a < b end,
-    [IR.GT] = function(a, b) return a > b end,
-    [IR.LTEQ] = function(a, b) return a <= b end,
-    [IR.GTEQ] = function(a, b) return a >= b end,
-    [IR.OR] = function(a, b) return a or b end,
-    [IR.AND] = function(a, b) return a and b end,
 }
 local foldr = {
     [IR.ADD] = function(l, a, b)
@@ -55,11 +47,27 @@ local foldr = {
     end
 }
 
+-- TODO
+-- comparisons
+local cfold = {
+    [IR.EQ] = function(a, b) return a == b end,
+    [IR.NEQ] = function(a, b) return a ~= b end,
+    [IR.LT] = function(a, b) return a < b end,
+    [IR.GT] = function(a, b) return a > b end,
+    [IR.LTEQ] = function(a, b) return a <= b end,
+    [IR.GTEQ] = function(a, b) return a >= b end,
+    [IR.OR] = function(a, b) return a or b end,
+    [IR.AND] = function(a, b) return a and b end
+}
+
 local function inst(ir, irc)
+    -- TODO: constant folding for CONCAT
+
     if fold[ir[1]] then
         -- TODO: check operands types are correct
         local l = ir[2]
         local r = ir[3]
+
         if l[1] == IR.CONST and r[1] == IR.CONST then
             -- e.g. 1 + 2 becomes 3
             return { IR.CONST, irc:constant(fold[ir[1]](irc.constants[l[2]], irc.constants[r[2]])) }
@@ -72,6 +80,17 @@ local function inst(ir, irc)
             else
                 return ir
             end
+        end
+    elseif cfold[ir[1]] then
+        local l = ir[2]
+        local r = ir[3]
+
+        -- manually fold primitives
+        local pri = (l[1] == IR.TRUE or l[1] == IR.FALSE or l[1] == IR.NIL)
+                and (r[1] == IR.TRUE or r[1] == IR.FALSE or r[1] == IR.NIL)
+
+        if pri then
+            return { l[1] == r[1] and IR.TRUE or IR.FALSE }
         end
     end
 

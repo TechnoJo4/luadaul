@@ -233,7 +233,7 @@ local function shouldpop(self, r)
 end
 
 -- tobool: convert to boolean
--- invert: skip next if false instead of skip next if true
+-- invert: skip next if false (jump if true) instead of skip next if true
 function compiler:compile_cond(ir, tobool, invert, ...)
     if tobool then
         invert = not invert

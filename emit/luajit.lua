@@ -1,4 +1,4 @@
---# selene: allow(bad_string_escape, unused_variable)
+--# selene: allow(bad_string_escape)
 -- spaghetti
 
 local bit = require("bit")
@@ -19,6 +19,9 @@ local u8 = string.char
 local function u16(num)
     return u8(band(num, 0xff))
         .. u8(band(rshift(num, 8), 0xff))
+end
+local function i16(num)
+    return u16(num + 0x7fff)
 end
 local function i32(num)
     return u8(band(num, 0xff))
@@ -98,12 +101,17 @@ local pos_C = pos_A + size_ABC
 local pos_B = pos_C + size_ABC
 local pos_D = pos_C
 
+-- TODO: profile current vs commented
 local function iABC(o, a, b, c)
-    return bor(lshift(o, pos_OP), lshift(a or 0, pos_A), lshift(b or 0, pos_B), lshift(c or 0, pos_C))
+    return u8(o, a or 0, c or 0, b or 0)
 end
 
 local function iAD(o, a, d)
-    return bor(lshift(o, pos_OP), lshift(a or 0, pos_A), lshift(d or 0, pos_D))
+    return u8(o, a or 0) .. u16(d or 0)
+end
+
+local function iAJ(o, a, d)
+    return u8(o, a or 0) .. i16(d or 0)
 end
 
 -- http://wiki.luajit.org/Bytecode-2.0
@@ -194,7 +202,7 @@ local function str_tohex(s)
     end)
 end
 
-local DEBUG_INSTS = true
+local DEBUG_INSTS = false
 local o = {}
 for k,v in pairs(opcodes) do
     if type(k) == "number" then
@@ -204,20 +212,18 @@ for k,v in pairs(opcodes) do
         if mode == BC_ABC then
             f = iABC
         elseif mode == BC_AJ then
-            f = function(op, a, d)
-                return iAD(op, a, d) -- TODO
-            end
+            f = iAJ
         end
 
         if DEBUG_INSTS then
             o[v] = function(...)
-                local s = i32(f(k, ...))
+                local s = f(k, ...)
                 print(padded, str_tohex(s), ...)
                 return s
             end
         else
             o[v] = function(...)
-                return i32(f(k, ...))
+                return f(k, ...)
             end
         end
     end
@@ -238,6 +244,7 @@ local KOBJ = enum({
     [0] = "CHILD", "TAB", "I64", "U64", "COMPLEX", "STR",
 }, false, true)
 
+-- selene: allow(unused_variable)
 local KTAB = enum({
     [0] = "NIL", "FALSE", "TRUE", "INT", "NUM", "STR",
 }, false, true)
@@ -305,7 +312,6 @@ local function new_compiler(irc)
             i = bor(i, v.mutable and 0x8000 or 0xc000)
         end
 
-        print(i, type(i))
         self.upvals[k] = u16(i)
     end
 
@@ -341,6 +347,7 @@ local function new_compiler(irc)
             error("invalid constant")
         end
     end
+
     return self
 end
 
@@ -358,7 +365,6 @@ function compiler:compile(ir, r, ...)
     local func = self.comp[t]
     if not func then
         if self.cond[t] then
-            -- TODO
             return self:compile_cond(ir, r or true, false, ...)
         else
             error(("No luajit compile rule for %s"):format(ir[1])) -- TODO: error
@@ -367,7 +373,62 @@ function compiler:compile(ir, r, ...)
     return func(self, ir, r, ...)
 end
 
-function compiler:compile_cond() --(ir, tobool, invert, ...)
+function compiler:compile_all(tbl, allow_breaks)
+    local old = self.breaks
+    self.breaks = allow_breaks or self.breaks
+    local bc = {}
+    for i,v in ipairs(tbl) do
+        bc[i] = self:compile(v)
+    end
+    self.breaks = old
+    return table.concat(bc, "")
+end
+
+function compiler:jmp_reg()
+    for i=0,255 do
+        if not self.regs[i] then
+            if DEBUG_REGS then
+                print("jmp_reg", i)
+            end
+            return i
+        end
+    end
+end
+
+-- tobool: convert to boolean
+-- invert: jump if true instead of jump if false
+function compiler:compile_cond(ir, tobool, invert, ...)
+    if tobool then
+        invert = not invert
+    end
+
+    local t = ir[1]
+    local code
+    local func = self.cond[t]
+    if not func then
+        if self.comp[t] then
+            local r
+            code, r = self.comp[t](self, ir, r, ...)
+            code = code..(invert and o.IST or o.ISF)(0, r)
+            if shouldpop(self, r) then
+                self:reg(r, false)
+            end
+        else
+            error(("No luajit compile rule for %s"):format(ir[1])) -- TODO: error
+        end
+    else
+        code = func(self, ir, invert, ...)
+    end
+
+    if tobool then
+        local r = self:jmp_reg()
+        if tobool == true then
+            tobool = self:reg()
+        end
+        code = code..o.JMP(r, 2)..o.KPRI(tobool, 1)..o.JMP(r, 1)..o.KPRI(tobool, 2)
+    end
+
+    return code, tobool
 end
 
 local DEBUG_REGS = false
@@ -405,17 +466,17 @@ function compiler:reg(r, v)
     error("Could not allocate register")
 end
 
-compiler[IR.FALSE] = function(self, _v, r)
+compiler.comp[IR.FALSE] = function(self, _v, r)
     r = r or self:reg()
     return o.KPRI(r, VKFALSE), r
 end
 
-compiler[IR.TRUE] = function(self, _v, r)
+compiler.comp[IR.TRUE] = function(self, _v, r)
     r = r or self:reg()
     return o.KPRI(r, VKTRUE), r
 end
 
-compiler[IR.NIL] = function(self, _v, r)
+compiler.comp[IR.NIL] = function(self, _v, r)
     r = r or self:reg()
     return o.KPRI(r, VKNIL), r
 end
@@ -431,7 +492,8 @@ compiler.comp[IR.CONST] = function(self, v, r)
     return o[opcodes[op]](r, v), r
 end
 
-compiler[IR.CLOSE] = function(self, ir)
+-- NOTE: whenever emitting JMP, check for IR.CLOSE to potentially inline jump
+compiler.comp[IR.CLOSE] = function(self, ir)
     local min = 256
     for i=2,#ir do
         local r = ir[i]
@@ -440,23 +502,32 @@ compiler[IR.CLOSE] = function(self, ir)
             min = r
         end
     end
-    return o.UCLO(min)
+    return o.UCLO(min, 0)
 end
 
 compiler.comp[IR.CLOSURE] = function(self, v, r)
     r = r or self:reg()
-    return o.FNEW(v[2]), r
+    return o.FNEW(r, v[2]), r
 end
 
 -- check constant type
 local function tconst(self, ir, t)
     if ir[1] ~= IR.CONST then return false end
+    if not t then return true end
 
     local ct = self.const_t[ir[2]]
     if ct == opcodes.KSHORT then
         ct = opcodes.KNUM
     end
+
     return ct == t and self.const_i[ir[2]]
+end
+
+-- check primitive type
+local function tpri(self, ir, t)
+    return (ir[i] == IR.NIL and (not t or t == VKNIL) and VKNIL)
+        or (ir[i] == IR.FALSE and (not t or t == VKFALSE) and VKFALSE)
+        or (ir[i] == IR.TRUE and (not t or t == VKTRUE) and VKTRUE)
 end
 
 compiler.comp[IR.RETURN] = function(self, v)
@@ -469,7 +540,78 @@ compiler.comp[IR.RETURN] = function(self, v)
     return a..o.RET1(ra, 2)
 end
 
--- TODO
+compiler.comp[IR.IF] = function(self, v)
+    local t = self:compile_all(v[3])
+    local jmp = is_jmp(t)
+    local cond = self:compile_cond(v[2], false, jmp)
+    local len = #t / 4
+    if v[4] then
+        local f = self:compile_all(v[4])
+        t = t..o.JMP(self:jmp_reg(), #f / 4)..f
+        len = len + 2
+    end
+    if not jmp then
+        cond = cond..o.JMP(self:jmp_reg(), len)
+    end
+    return cond..t
+end
+
+compiler.comp[IR.CONDITIONAL] = function(self, v, r)
+    local cond = self:compile_cond(v[2])
+    r = r or self:reg()
+    local t = self:compile(v[3], r)
+    local f = self:compile(v[4], r)
+    return cond
+        .. o.JMP(self:jmp_reg(), #t / 4 + 2) .. t
+        .. o.JMP(self:jmp_reg(), #f / 4 + 1) .. f, r
+end
+
+compiler.comp[IR.BREAK] = function(self)
+    if not self.breaks then
+        error("break not allowed outside loops") -- TODO: error
+    end
+    return "\xFF\xFF\xFF"..u8(self:jmp_reg())
+end
+
+local function break_replace(code, len)
+    if len then
+        len = len * 4
+    else
+        len = #code
+    end
+
+    local breaks = {}
+    for i=1,len,4 do
+        if code:byte(i) == 0xff then
+            breaks[#breaks+1] = i - 1
+        end
+    end
+
+    len = len / 4
+
+    local last = 1
+    for i,v in ipairs(breaks) do
+        breaks[i] = code:sub(last, v) .. o.JMP(code:byte(v + 4), len - (v/4))
+        last = v + 5
+    end
+    breaks[#breaks+1] = code:sub(last)
+
+    return table.concat(breaks)
+end
+
+compiler.comp[IR.LOOP] = function(self, v)
+    local code = self:compile_all(v[2], true)
+    local last = code:sub(-4, -1)
+    if getop(last) == 50 then -- UCLO
+        -- rewrite UCLO with jump target
+        code = code:sub(1, -5)..o.UCLO(last:byte(2), -(#code / 4))
+    else
+        code = code..o.JMP(self:jmp_reg(), -(#code / 4))
+    end
+
+    code = break_replace(code)
+    return code
+end
 
 local function binop(name)
     return function(self, v, r)
@@ -527,7 +669,93 @@ compiler.comp[IR.MOD] = binop("MOD")
 
 compiler.comp[IR.UNM] = unop("UNM")
 compiler.comp[IR.LEN] = unop("LEN")
-compiler.comp[IR.NOT] = unop("NOT") -- TODO: also add compiler.cond rule
+compiler.comp[IR.NOT] = unop("NOT")
+
+compiler.cond[IR.NOT] = function(self, v, invert)
+    return self:compile_cond(v[2], false, not invert)
+end
+
+local function bincmp(inst, inst_i, swap)
+    return function(self, v, invert)
+        local lhs, rhs = v[2], v[3]
+
+        local b, rc = self:compile(rhs)
+        local a, rb = self:compile(lhs)
+        if swap then
+            rc, rb = rb, rc
+        end
+
+        local s = a..b..inst(rb, rc)
+
+        if shouldpop(self, rc) then
+            self:reg(rc, false)
+        end
+        if shouldpop(self, rb) then
+            self:reg(rb, false)
+        end
+        return s
+    end
+end
+
+compiler.cond[IR.LT] = bincmp(o.ISGE, o.ISLT)
+compiler.cond[IR.LTEQ] = bincmp(o.ISGT, o.ISLE)
+compiler.cond[IR.GT] = bincmp(o.ISGE, o.ISLT, true)
+compiler.cond[IR.GTEQ] = bincmp(o.ISGT, o.ISLE, true)
+
+local function bineq(no)
+    return function(self, v, invert)
+        local lhs, rhs = v[2], v[3]
+
+        -- (in)equality comparisons are swapped as
+        -- needed to bring constants to the right
+        if tpri(self, lhs) or tconst(self, lhs) then
+            lhs, rhs = rhs, lhs
+        end
+
+        local ra
+        lhs, ra = self:compile(lhs)
+
+        local oper, rb
+        if tpri(self, rhs) then
+            rhs, rb = "", rp
+            oper = "P"
+        elseif tconst(self, rhs) then
+            local n = tconst(self, rhs, opcodes.KNUM)
+            if n then
+                rhs, rb = "", n
+                oper = "N"
+            else
+                n = tconst(self, rhs, opcodes.KSTR)
+                if n then
+                    rhs, rb = "", n
+                    oper = "S"
+                else
+                    -- fallback to var
+                    rhs, rb = self:compile(rhs)
+                    oper = "V"
+                end
+            end
+        else
+            rhs, rb = self:compile(rhs)
+            oper = "V"
+        end
+
+        local s = lhs..rhs..(o[name..oper](ra, rb))
+
+        if shouldpop(self, rc) then
+            self:reg(rc, false)
+        end
+        if shouldpop(self, rb) then
+            self:reg(rb, false)
+        end
+        return s, r
+    end
+end
+
+compiler.cond[IR.EQ] = bineq(false)
+compiler.cond[IR.NEQ] = bineq(true)
+
+-- TODO: and/or
 
 function compiler:localreg(idx)
     for i=1,#self.local_offsets do
@@ -563,18 +791,29 @@ compiler.comp[IR.SETLOCAL] = function(self, v, r)
     if not r or r == n then
         return self:compile(v[3], n)
     else
-        local code, a = self:compile(v[3], r)
+        local code = self:compile(v[3], r)
         return code..o.MOV(n, r), r
     end
 end
 
+compiler.comp[IR.GETUPVAL] = function(self, v, r)
+    r = r or self:reg()
+    return o.UGET(r, v[2]), r
+end
+
+compiler.comp[IR.SETUPVAL] = function(self, v, r)
+    -- TODO: USETx
+end
+
 compiler.comp[IR.GETTABLE] = function(self, v, ra)
-    local b, rb = self:compile(v[2])
+    local b, rb = self:compile(v[2], ra)
     ra = ra or rb
+
     local n = tconst(self, v[3], opcodes.KNUM)
     if n and self.kshort[v[3][2]] >= 0 and self.kshort[v[3][2]] <= 255 then
         return b..o.TGETB(ra, rb, self.kshort[v[3][2]]), ra
     end
+
     n = tconst(self, v[3], opcodes.KSTR)
     if n then
         return b..o.TGETS(ra, rb, n), ra
@@ -592,15 +831,16 @@ compiler.comp[IR.SETTABLE] = function(self, v, ra)
 
     local n = tconst(self, v[3], opcodes.KNUM)
     if n and self.kshort[v[3][2]] >= 0 and self.kshort[v[3][2]] <= 255 then
-        return a..b..o.TGETB(ra, rb, self.kshort[v[3][2]]), ra
+        return a..b..o.TSETB(ra, rb, self.kshort[v[3][2]]), ra
     end
+
     n = tconst(self, v[3], opcodes.KSTR)
     if n then
-        return a..b..o.TGETS(ra, rb, n), ra
+        return a..b..o.TSETS(ra, rb, n), ra
     end
 
     local c, rc = self:compile(v[3])
-    return a..b..c..a..o.TGETV(ra, rb, rc), ra
+    return a..b..c..o.TSETV(ra, rb, rc), ra
 end
 
 compiler.comp[IR.CALL] = function(self, v, a)
@@ -662,12 +902,12 @@ function compiler:compile_chunk()
     return chunk(self)
 end
 
+-- selene: allow(unused_variable)
 function compiler:compile_main(name)
     --self.name = name
     -- STRIP 0x02
     -- FR2   0x08
     local main = "\x1BLJ\x02" .. uleb128(2) .. self:compile_chunk() .. uleb128(0)
-    p(main)
     return main
 end
 

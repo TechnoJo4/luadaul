@@ -46,18 +46,18 @@ if argv[1] then
         itime = os.clock() - t2 + itime
     end
     local ltime = parser.lexer.time()
-    print("Lexer   ", ltime)
-    print("Parser  ", ptime)
-    print("IR      ", itime)
+    --print("Lexer   ", ltime)
+    --print("Parser  ", ptime)
+    --print("IR      ", itime)
 
     ltime = os.clock()
     local bcc = lua.new_compiler(irc, true)
     local bc = bcc:compile_main("@"..f_in)
-    print("Bytecode", os.clock() - ltime)
+    --print("Bytecode", os.clock() - ltime)
     f = io.open(f_out, "wb")
     f:write(bc)
     f:close()
 else
-    -- no repl because compiler can't run on lua51 and no luajit emitter
+    -- no repl because compiler can't run on lua51 and luajit emitter is incomplete
     error("argv[1]")
 end

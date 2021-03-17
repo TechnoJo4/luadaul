@@ -110,6 +110,19 @@ function parser:stmt(allow_block, no_end)
             consume_end(self.lexer)
         end
     end
+
+    -- ugly hack to skip newlines before EOF
+    local i = 1
+    token = self.lexer.get(i)
+    while token.type == T.Newline or token.type == T.Semi do
+        i = i + 1
+        token = self.lexer.get(i)
+        if token.type == T.EOF then
+            self.lexer.adv(i-1)
+            return stmt
+        end
+    end
+
     return stmt
 end
 

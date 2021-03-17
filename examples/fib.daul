@@ -1,7 +1,15 @@
 let time = require("time")
 
 let fib_rec = { n ->
-    return if (n <= 1) n else fib_rec(n - 2) + fib_rec(n - 1)
+    return
+        if (n <= 1)
+            n
+        else
+            fib_rec(n - 2) + fib_rec(n - 1)
 }
 
-for (i=27,40,2) time(fib_rec, i)
+let i = 27
+while (i < 40) {
+    time(fib_rec, i)
+    i = i + 1
+}
