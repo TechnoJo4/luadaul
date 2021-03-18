@@ -23,12 +23,6 @@ end
 local function i16(num)
     return u16(num + 0x7fff)
 end
-local function i32(num)
-    return u8(band(num, 0xff))
-        .. u8(band(rshift(num, 8), 0xff))
-        .. u8(band(rshift(num, 16), 0xff))
-        .. u8(band(rshift(num, 24), 0xff))
-end
 
 local function f64_b(num)
     local v = double_t({ num })
@@ -38,9 +32,6 @@ local function f64_b(num)
     ffi.copy(hi, data + 4, 4)
     return lo[0], hi[0]
 end
-
--- selene:allow(undefined_variable)
-local p = p or function() end
 
 --[==[
     bytecode dump format description from lj_bcdump.h
@@ -91,15 +82,6 @@ end
 local function is_int16(num)
     return num == i16_t({ num })[0]
 end
-
-local size_ABC = 8
-local size_OP = 8
-
-local pos_OP = 0
-local pos_A = pos_OP + size_OP
-local pos_C = pos_A + size_ABC
-local pos_B = pos_C + size_ABC
-local pos_D = pos_C
 
 -- TODO: profile current vs commented
 local function iABC(o, a, b, c)
@@ -283,9 +265,10 @@ local function chunk(data, _strip)
 end
 
 -- IR -> bytecode compile rules
-local cond = {} -- conditions
-local comp = setmetatable({}, { __index=base.base }) -- everything else
-local compiler = { comp=comp, cond=cond }
+local compiler = {
+    comp = setmetatable({}, { __index=base.base }), -- everything else
+    cond = {} -- conditions
+}
 
 local function new_compiler(irc)
     local self = setmetatable({
@@ -384,17 +367,6 @@ function compiler:compile_all(tbl, allow_breaks)
     return table.concat(bc, "")
 end
 
-function compiler:jmp_reg()
-    for i=0,255 do
-        if not self.regs[i] then
-            if DEBUG_REGS then
-                print("jmp_reg", i)
-            end
-            return i
-        end
-    end
-end
-
 -- tobool: convert to boolean
 -- invert: jump if true instead of jump if false
 function compiler:compile_cond(ir, tobool, invert, ...)
@@ -432,6 +404,17 @@ function compiler:compile_cond(ir, tobool, invert, ...)
 end
 
 local DEBUG_REGS = false
+function compiler:jmp_reg()
+    for i=0,255 do
+        if not self.regs[i] then
+            if DEBUG_REGS then
+                print("jmp_reg", i)
+            end
+            return i
+        end
+    end
+end
+
 function compiler:reg(r, v)
     if v == nil then
         v = true
@@ -525,9 +508,9 @@ end
 
 -- check primitive type
 local function tpri(self, ir, t)
-    return (ir[i] == IR.NIL and (not t or t == VKNIL) and VKNIL)
-        or (ir[i] == IR.FALSE and (not t or t == VKFALSE) and VKFALSE)
-        or (ir[i] == IR.TRUE and (not t or t == VKTRUE) and VKTRUE)
+    return (ir[1] == IR.NIL and (not t or t == VKNIL) and VKNIL)
+        or (ir[1] == IR.FALSE and (not t or t == VKFALSE) and VKFALSE)
+        or (ir[1] == IR.TRUE and (not t or t == VKTRUE) and VKTRUE)
 end
 
 compiler.comp[IR.RETURN] = function(self, v)
@@ -685,7 +668,7 @@ local function bincmp(inst, inst_i, swap)
             rc, rb = rb, rc
         end
 
-        local s = a..b..inst(rb, rc)
+        local s = a..b..(invert and inst_i or inst)(rb, rc)
 
         if shouldpop(self, rc) then
             self:reg(rc, false)
@@ -717,7 +700,7 @@ local function bineq(no)
 
         local oper, rb
         if tpri(self, rhs) then
-            rhs, rb = "", rp
+            rhs, rb = "", tpri(self, rhs)
             oper = "P"
         elseif tconst(self, rhs) then
             local n = tconst(self, rhs, opcodes.KNUM)
@@ -740,15 +723,18 @@ local function bineq(no)
             oper = "V"
         end
 
-        local s = lhs..rhs..(o[name..oper](ra, rb))
+        if no then
+            invert = not invert
+        end
+        local s = lhs..rhs..(o[(invert and "ISEQ" or "ISNE")..oper](ra, rb))
 
-        if shouldpop(self, rc) then
-            self:reg(rc, false)
+        if shouldpop(self, ra) then
+            self:reg(ra, false)
         end
         if shouldpop(self, rb) then
             self:reg(rb, false)
         end
-        return s, r
+        return s
     end
 end
 
@@ -803,6 +789,7 @@ end
 
 compiler.comp[IR.SETUPVAL] = function(self, v, r)
     -- TODO: USETx
+    print("TODO", v, r)
 end
 
 compiler.comp[IR.GETTABLE] = function(self, v, ra)
