@@ -1,6 +1,10 @@
 # daul
 
-A language that compiles to Lua bytecode.
+<p align="center">
+  <img width="256px" src="logo/daul.png"/>
+</p>
+
+Daul is a language that compiles to Lua and LuaJIT bytecode.
 
 Some examples are available in the `examples` directory.
 
