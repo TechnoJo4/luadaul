@@ -933,6 +933,11 @@ compiler.comp[IR.NAMECALL] = function(self, v, a)
 end
 
 function compiler:compile_chunk()
+    if #self.irc.ir == 0 then
+        self.code[1] = o.RET0(0, 1)
+        return chunk(self)
+    end
+
     for i,v in ipairs(self.irc.ir) do
         local code = self:compile(v)
         self.code[i] = code

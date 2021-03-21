@@ -319,6 +319,7 @@ irc[ET.While] = function(self, stmt)
     for i=#loop,1,-1 do
         loop[i+1] = loop[i]
     end
+
     loop[1] = self:inst({
         IR.IF,
         self:inst({ IR.NOT, self:expr(stmt.cond) }), {
