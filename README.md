@@ -4,7 +4,7 @@
   <img width="256px" src="logo/daul.png"/>
 </p>
 
-Daul is a language that compiles to Lua and LuaJIT bytecode.
+daul is a language that compiles to Lua and LuaJIT bytecode.
 
 Some examples are available in the `examples` directory.
 
@@ -22,3 +22,13 @@ Most of these goals are very long-term, but they should serve as an idea of what
   - [ ] Type checking
   - [ ] Custom operators
   - [ ] Macros
+
+Missing Lua(JIT) features:
+  - [ ] Multi-value operations
+    - [ ] Varargs `...`
+    - [ ] Multi-assingments `a, b = b, a`
+    - [ ] Multiple returns `return a, b`
+    - [ ] Other
+  - [ ] LuaJIT: FFI (?)
+  - [ ] LuaJIT: cdata constants
+  - [ ] LuaJIT: Optimizations (e.g. template tables/TDUP)

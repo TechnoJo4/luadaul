@@ -388,6 +388,10 @@ compiler[IR.CONDITIONAL] = function(self, v, r)
         .. o.JMP(0, #f / 4) .. f, r
 end
 
+compiler[IR.LJ_LOOP] = function(_self, _v)
+    -- nothing. this instruction is only used on luajit
+end
+
 compiler[IR.LOOP] = function(self, v)
     local code = self:compile_all(v[2], true)
     local last = code:sub(-4, -1)
@@ -615,7 +619,6 @@ end
 local function andor(c)
     return function(self, v, ra)
         ra = ra or self:reg()
-        local rb = self:reg()
 
         local lhs, rhs = v[2], v[3]
 
@@ -627,6 +630,7 @@ local function andor(c)
                 .. a, ra
         end
 
+        local rb = self:reg()
         local b = self:compile(lhs, rb)
         self:reg(rb, false)
         local a = self:compile(rhs, ra)

@@ -30,6 +30,7 @@ local function token(tbl)
     return setmetatable(tbl, token_meta)
 end
 
+-- TODO: this AST is a complete mess and i should rewrite most of it when self-hosting
 -- this was originally called ET to mean "Expression Types",
 -- but it does also now (mostly) contain types of statements.
 local ET = enum({
@@ -50,6 +51,8 @@ local ET = enum({
     "ForNum",
     "ForIter",
     "Break",
+    "Table",
+    "TableKey",
 }, true)
 
 local expr_tostring

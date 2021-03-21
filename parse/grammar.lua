@@ -52,6 +52,22 @@ local function match(lexer, ttype)
     return false
 end
 
+-- potentially match an operator token
+local function match_oper(lexer, oper)
+    local i = 1
+    local token = lexer.get(i)
+    if ttype ~= T.Newline then
+        while token.type == T.Newline do
+            i = i + 1
+            token = lexer.get(i)
+        end
+    end
+    if token.type == T.Oper or token.oper == oper then
+        return lexer.adv(i)
+    end
+    return false
+end
+
 -- require a match of a token
 local function consume(lexer, ttype, what)
     local last = lexer.get(0)
@@ -71,7 +87,7 @@ end
 -- require a newline or semicolon to end a statement
 local function consume_end(lexer)
     local token = lexer.adv()
-    if token.type ~= T.Newline and token.type ~= T.Semi then
+    if token.type ~= T.Newline and token.type ~= T.Semi and token.type ~= T.EOF then
         --print("prev", lexer.get(-1))
         err(lexer, lexer.get(-1), error_t, "Expected newline or ';' after statement", nil, true)
     end
@@ -148,13 +164,54 @@ return function(self)
         return s
     end)
 
+    self:def_pre(T.New, function(parser, _token)
+        local s = expr({ ET.Table })
+        local f = {}
+
+        consume(parser.lexer, T.LBrace, " before table fields")
+        local i = 0
+        while not match(parser.lexer, T.RBrace) do
+            if match(parser.lexer, T.LSQB) then
+                local key = parser:expr()
+                consume(parser.lexer, T.RSQB, " after field key")
+                consume_oper(parser.lexer, "=", " after field key")
+
+                if key.type == T.Number and key.num == math.floor(key.num) then
+                    i = key.num
+                    f[#f+1] = { expr({ ET.TableKey, key.num }), parser:expr() }
+                else
+                    f[#f+1] = { key, parser:expr() }
+                end
+            elseif match(parser.lexer, T.Dot) then
+                local name = consume(parser.lexer, T.Name)
+                consume_oper(parser.lexer, "=", " after field name")
+                f[#f+1] = { expr({ ET.TableKey, name.name }), parser:expr() }
+            else
+                i = i + 1
+                f[#f+1] = { expr({ ET.TableKey, i }), parser:expr() }
+            end
+
+            if match(parser.lexer, T.Newline) then
+                -- nothing, go to next field
+            elseif match(parser.lexer, T.Semi) then
+                -- nothing, go to next field
+            elseif match(parser.lexer, T.Comma) then
+                -- nothing, go to next field
+            else
+                consume(parser.lexer, T.RBrace, " after table fields")
+                break
+            end
+        end
+
+        s.fields = f
+        return s
+    end)
+
     -- assignment
     local _assignables = enum({ ET.ExprIndex, ET.NameIndex, T.Name })
     self:def_post("=", P.Assignment, function(parser, token, left, prec)
         local t = left.type or left[1].type or left[1]
         if not _assignables[t == T.Oper and left[1].oper or t] then
-            -- TODO: err
-            print(left, t)
             err(parser, token, error_t, "Invalid assignment target")
         end
 
@@ -277,7 +334,7 @@ return function(self)
 
     -- trailing lambda call - a {}
     self:def_post(T.LBrace, P.Primary, function(parser, _token, left)
-        -- TODO: restrict allowed expression types
+        -- TODO: restrict allowed (left) expression types
         return expr({
             ET.Call,
             target=left,

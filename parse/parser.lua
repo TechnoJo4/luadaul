@@ -44,7 +44,7 @@ end
 -- require a newline or semicolon to end a statement
 local function consume_end(lexer)
     local token = lexer.adv()
-    if token.type ~= T.Newline and token.type ~= T.Semi then
+    if token.type ~= T.Newline and token.type ~= T.Semi and token.type ~= T.EOF then
         err(lexer, lexer.get(-1), error_t, "Expected newline or ';' after statement", nil, true)
     end
     return token
@@ -112,14 +112,16 @@ function parser:stmt(allow_block, no_end)
     end
 
     -- ugly hack to skip newlines before EOF
-    local i = 1
-    token = self.lexer.get(i)
-    while token.type == T.Newline or token.type == T.Semi do
-        i = i + 1
+    if self.lexer.get(0).type ~= T.EOF then
+        local i = 1
         token = self.lexer.get(i)
-        if token.type == T.EOF then
-            self.lexer.adv(i-1)
-            return stmt
+        while token.type == T.Newline or token.type == T.Semi do
+            i = i + 1
+            token = self.lexer.get(i)
+            if token.type == T.EOF then
+                self.lexer.adv(i-1)
+                return stmt
+            end
         end
     end
 

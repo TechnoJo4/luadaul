@@ -83,7 +83,6 @@ local function is_int16(num)
     return num == i16_t({ num })[0]
 end
 
--- TODO: profile current vs commented
 local function iABC(o, a, b, c)
     return u8(o, a or 0, c or 0, b or 0)
 end
@@ -582,9 +581,15 @@ local function break_replace(code, len)
     return table.concat(breaks)
 end
 
+compiler.comp[IR.LJ_LOOP] = function(self, _v)
+    return o.LOOP(self:jmp_reg(), 0x8000)
+end
+
 compiler.comp[IR.LOOP] = function(self, v)
     local code = self:compile_all(v[2], true)
+    code = o.LOOP()..code
     local last = code:sub(-4, -1)
+
     if getop(last) == 50 then -- UCLO
         -- rewrite UCLO with jump target
         code = code:sub(1, -5)..o.UCLO(last:byte(2), -(#code / 4))
@@ -741,7 +746,46 @@ end
 compiler.cond[IR.EQ] = bineq(false)
 compiler.cond[IR.NEQ] = bineq(true)
 
--- TODO: and/or
+
+local function andor(c)
+    return function(self, v, ra)
+        ra = ra or self:reg()
+
+        local lhs, rhs = v[2], v[3]
+
+        -- optimize x = x or y
+        if lhs[1] == IR.GETLOCAL and ra == self:localreg(lhs[2]) then
+            local a = self:compile(rhs, ra)
+            return (c and o.ISF or o.IST)(0, ra)
+                .. o.JMP(self:jmp_reg(), #a / 4)
+                .. a, ra
+        end
+
+        local rb = self:reg()
+        local b = self:compile(lhs, rb)
+        self:reg(rb, false)
+        local a = self:compile(rhs, ra)
+
+        return b
+            .. o.TESTSET(ra, rb, c)
+            .. o.JMP(0, #a / 4)
+            .. a, ra
+    end
+end
+
+local function andor_cond(c)
+    return function(self, v, invert)        
+        local lhs, rhs = v[2], v[3]
+        lhs = self:compile_cond(lhs, false, c)
+        rhs = self:compile_cond(rhs, false, invert)
+        return lhs..o.JMP(0, #rhs / 4)..rhs
+    end
+end
+
+compiler[IR.AND] = andor(false)
+compiler[IR.OR] = andor(true)
+compiler.cond[IR.AND] = andor_cond(false)
+compiler.cond[IR.OR] = andor_cond(true)
 
 function compiler:localreg(idx)
     for i=1,#self.local_offsets do
@@ -788,8 +832,25 @@ compiler.comp[IR.GETUPVAL] = function(self, v, r)
 end
 
 compiler.comp[IR.SETUPVAL] = function(self, v, r)
-    -- TODO: USETx
-    print("TODO", v, r)
+    if not r then
+        local n = tconst(self, v[3], opcodes.KNUM)
+        if n then
+            return o.USETN(v[2], n)
+        end
+
+        n = tconst(self, v[3], opcodes.KSTR)
+        if n then
+            return o.USETS(v[2], n)
+        end
+
+        n = tpri(self, v[3])
+        if n then
+            return o.USETP(v[2], n)
+        end
+    end
+
+    local b, rb = self:compile(v[3])
+    return b..o.USETV(v[2], rb), rb
 end
 
 compiler.comp[IR.GETTABLE] = function(self, v, ra)
@@ -810,24 +871,22 @@ compiler.comp[IR.GETTABLE] = function(self, v, ra)
     return b..c..o.TGETV(ra, rb, rc), ra
 end
 
-compiler.comp[IR.SETTABLE] = function(self, v, ra)
+compiler.comp[IR.SETTABLE] = function(self, v, r)
     local b, rb = self:compile(v[2])
-
-    local a
-    a, ra = self:compile(v[4], ra)
+    local a, ra = self:compile(v[4], r)
 
     local n = tconst(self, v[3], opcodes.KNUM)
-    if n and self.kshort[v[3][2]] >= 0 and self.kshort[v[3][2]] <= 255 then
-        return a..b..o.TSETB(ra, rb, self.kshort[v[3][2]]), ra
+    if n and not r and self.kshort[v[3][2]] >= 0 and self.kshort[v[3][2]] <= 255 then
+        return b..a..o.TSETB(ra, rb, self.kshort[v[3][2]]), ra
     end
 
     n = tconst(self, v[3], opcodes.KSTR)
-    if n then
-        return a..b..o.TSETS(ra, rb, n), ra
+    if n and not r then
+        return b..a..o.TSETS(ra, rb, n), ra
     end
 
     local c, rc = self:compile(v[3])
-    return a..b..c..o.TSETV(ra, rb, rc), ra
+    return b..a..c..o.TSETV(ra, rb, rc), ra
 end
 
 compiler.comp[IR.CALL] = function(self, v, a)

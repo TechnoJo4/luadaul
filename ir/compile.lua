@@ -319,7 +319,13 @@ irc[ET.While] = function(self, stmt)
     for i=#loop,1,-1 do
         loop[i+1] = loop[i]
     end
-    loop[1] = self:inst({ IR.IF, self:inst({ IR.NOT, self:expr(stmt.cond) }), { self:inst({ IR.BREAK }) } })
+    loop[1] = self:inst({
+        IR.IF,
+        self:inst({ IR.NOT, self:expr(stmt.cond) }), {
+            self:inst({ IR.BREAK }),
+            self:inst({ IR.LJ_LOOP }) -- is compiled away on lua51
+        }
+    })
     return { IR.LOOP, loop }
 end
 
@@ -359,6 +365,44 @@ irc[T.True] = function(self)
 end
 irc[T.False] = function(self)
     return { IR.FALSE }
+end
+
+irc[ET.TableKey] = function(self, expr)
+    return { IR.CONST, self:constant(expr[2]) }
+end
+
+irc[ET.Table] = function(self, expr)
+    local ir = { IR.NEWTABLE }
+
+    -- get fields with number keys
+    local t = {}
+    for _,v in ipairs(expr.fields) do
+        local key = v[1]
+        if key[1] == ET.TableKey and type(key[2]) == "number" then
+            t[key[2]] = { key, self:constant(key[2]), self:compile(v[2]) }
+        end
+    end
+
+    local inarray = {}
+    local array = {}
+    local fields = {}
+
+    -- ipairs to only iterate through contiguous keys starting from 1
+    for i,v in ipairs(t) do
+        inarray[v[1]] = true
+        array[i] = { v[2], v[3] }
+    end
+
+    -- get fields not in array
+    for _,v in pairs(expr.fields) do
+        if not inarray[v[1]] then
+            fields[#fields+1] = { self:constant(v[1]), self:compile(v[2]) }
+        end
+    end
+
+    ir[2] = array
+    ir[3] = fields
+    return ir
 end
 
 local function unop(ir)

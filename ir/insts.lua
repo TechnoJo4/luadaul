@@ -16,7 +16,8 @@ return require("common.utils").enum({
     "RETURN",
     "POP", "PUSH", "CLOSE",
     "CONDITIONAL",
-    "IF", "BREAK",
+    "IF", "BREAK", "LJ_LOOP",
     "LOOP", "NUMFOR", "ITERFOR",
-    "CLOSURE"
+    "CLOSURE",
+    "NEWTABLE",
 }, true)

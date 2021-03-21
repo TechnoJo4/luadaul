@@ -15,7 +15,6 @@ local keywords = {
     ["let"] = T.Let,
     ["new"] = T.New,
     ["typedef"] = T.Type,
-    ["export"] = T.Export,
     ["return"] = T.Return,
     ["if"] = T.If,
     ["else"] = T.Else,
@@ -51,7 +50,9 @@ local escapes = {
     [sbyte("v")] = "\v",
 }
 
+-- TODO: keyword identifiers (e.g. `in`)
 --local grave = sbyte("`")
+
 local single_quote = sbyte("'")
 local double_quote = sbyte('"')
 
