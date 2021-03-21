@@ -655,9 +655,9 @@ compiler.comp[IR.MUL] = binop("MUL")
 compiler.comp[IR.DIV] = binop("DIV")
 compiler.comp[IR.MOD] = binop("MOD")
 
-compiler.comp[IR.UNM] = unop("UNM")
-compiler.comp[IR.LEN] = unop("LEN")
-compiler.comp[IR.NOT] = unop("NOT")
+compiler.comp[IR.UNM] = unop(o.UNM)
+compiler.comp[IR.LEN] = unop(o.LEN)
+compiler.comp[IR.NOT] = unop(o.NOT)
 
 compiler.cond[IR.NOT] = function(self, v, invert)
     return self:compile_cond(v[2], false, not invert)
