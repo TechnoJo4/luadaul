@@ -12,7 +12,6 @@ local bor, band, rshift, lshift = bit.bor, bit.band, bit.rshift, bit.lshift
 local PUSH = base.PUSH
 
 local i16_t = ffi.typeof('int16_t[1]')
-local i32_t = ffi.typeof('int32_t[1]')
 local double_t = ffi.typeof('double[1]')
 
 local u8 = string.char
@@ -25,12 +24,9 @@ local function i16(num)
 end
 
 local function f64_b(num)
-    local v = double_t({ num })
-    local data = ffi.cast('uint8_t*', v)
-    local lo, hi = i32_t(0), i32_t(0)
-    ffi.copy(lo, data, 4)
-    ffi.copy(hi, data + 4, 4)
-    return lo[0], hi[0]
+    local v = double_t(num)
+    local data = ffi.cast('int32_t*', v)
+    return data[0], data[1]
 end
 
 --[==[
@@ -54,25 +50,35 @@ end
 
 local function uleb128(num)
     local bytes = {}
-    repeat
+    while true do
         local byte = band(num, 0x7f)
         num = rshift(num, 7)
-        bytes[#bytes+1] = u8(num == 0 and byte or bor(byte, 0x80))
-    until num <= 0
-    return table.concat(bytes, "")
+        if num == 0 then
+            bytes[#bytes+1] = u8(byte)
+            return table.concat(bytes, "") 
+        end
+        bytes[#bytes+1] = u8(bor(byte, 0x80))
+    end
 end
 
 local function uleb128_33(num, b)
-    local bytes = { -- ((num & 0x3f) << 1) | b
-        u8(bor(lshift(band(num, 0x3f), 1), b))
-    }
+    local byte = bor(lshift(band(num, 0x3f), 1), b)
+
     num = rshift(num, 6)
-    while num > 0 do
-        local byte = band(num, 0x7f)
-        num = rshift(num, 7)
-        bytes[#bytes+1] = u8(num == 0 and byte or bor(b, 0x80))
+    if num == 0 then
+        return u8(byte)
     end
-    return table.concat(bytes, "")
+
+    local bytes = { u8(bor(byte, 0x80)) }
+    while true do
+        byte = band(num, 0x7f)
+        num = rshift(num, 7)
+        if num == 0 then
+            bytes[#bytes+1] = u8(byte)
+            return table.concat(bytes, "") 
+        end
+        bytes[#bytes+1] = u8(bor(byte, 0x80))
+    end
 end
 
 local function is_int(num)
@@ -178,12 +184,13 @@ local modes = {
 }
 
 local function str_tohex(s)
-    return s:gsub(".", function(c)
+    local v = s:gsub(".", function(c)
         return bit.tohex(string.byte(c)):sub(-2,-1)
     end)
+    return v
 end
 
-local DEBUG_INSTS = false
+local DEBUG_INSTS = true
 local o = {}
 for k,v in pairs(opcodes) do
     if type(k) == "number" then
@@ -297,6 +304,8 @@ local function new_compiler(irc)
         self.upvals[k] = u16(i)
     end
 
+    -- knum   = intU0 | (loU1 hiU)
+    -- kgc    = kgctypeU { ktab | (loU hiU) | (rloU rhiU iloU ihiU) | strB* }
     for k,v in pairs(irc.constants) do
         local t = type(v)
         if t == "number" then
