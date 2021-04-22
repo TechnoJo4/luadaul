@@ -76,6 +76,7 @@ local function new_irc(parent, args)
         end
     end
 
+    self:start_scope()
     return self
 end
 
@@ -83,7 +84,13 @@ function irc:inst(v)
     return setmetatable(opts.inst(v, self), inst_meta)
 end
 
-function irc:final_opts()
+function irc:finalize()
+    local code = { self:end_scope() }
+    for i,v in ipairs(code) do
+        code[i] = self:inst(v)
+    end
+    self:emit(code)
+
     opts.final(self)
 end
 
@@ -132,12 +139,17 @@ function irc:declare(name)
     return #self.locals-1
 end
 
-function irc:resolve(name, set)
+function irc:resolve(name, set, new_uv)
     for i=#self.locals,1,-1 do
         if self.locals[i].name == name then
+            if new_uv then
+                self.locals[i].close = true
+            end
+
             return set and IR.SETLOCAL or IR.GETLOCAL, i-1
         end
     end
+
     for i=#self.upvals,1,-1 do
         local u = self.upvals[i]
         if u.name == name then
@@ -151,8 +163,9 @@ function irc:resolve(name, set)
             return IR.GETUPVAL, i-1
         end
     end
+
     if self.parent then
-        local ir, i = self.parent:resolve(name, set)
+        local ir, i = self.parent:resolve(name, set, true)
         if i then
             local ir2 = set and IR.SETUPVAL or IR.GETUPVAL
             self.upvals[#self.upvals+1] = { name=name, i=i, upval=ir == ir2, mutable=set }
@@ -160,12 +173,17 @@ function irc:resolve(name, set)
             return ir2, self.nupvals-1
         end
     end
+
     return set and IR.SETGLOBAL or IR.GETGLOBAL
 end
 
 function irc:constant(value, makeir)
     if self.constvals[value] then
-        return makeir and self:inst({ IR.CONST, self.constvals[value] }) or self.constvals[value]
+        local n = self.constvals[value]
+        if makeir then
+            return self:inst({ IR.CONST, n })
+        end
+        return n
     end
     local n = self.nconstants
     self.nconstants = self.nconstants + 1
@@ -194,6 +212,13 @@ function irc:expr(expr)
     return self:inst(func(self, expr))
 end
 
+function irc:emit(code)
+    local i = #self.ir
+    for j,v in ipairs(code) do
+        self.ir[i+j] = v
+    end
+end
+
 function irc:stmt(stmt, ret)
     local func = self[stmt[1]]
     if not func then
@@ -207,10 +232,7 @@ function irc:stmt(stmt, ret)
     if ret then
         return unpack(code)
     else
-        local i = #self.ir
-        for j,v in pairs(code) do
-            self.ir[i+j] = v
-        end
+        self:emit(code)
     end
 end
 
@@ -267,12 +289,9 @@ irc[ET.Declare] = function(self, stmt)
 end
 
 irc[ET.If] = function(self, stmt)
-    return {
-        IR.IF,
-        self:expr(stmt.cond),
-        { self:stmt(stmt.true_branch, true) },
-        stmt.false_branch and { self:stmt(stmt.false_branch, true) }
-    }
+    local t = { self:stmt(stmt.true_branch, true) }
+    local f = stmt.false_branch and { self:stmt(stmt.false_branch, true) }
+    return { IR.IF, self:expr(stmt.cond), t, f }
 end
 
 irc[ET.ForNum] = function(self, stmt)
@@ -311,23 +330,23 @@ irc[ET.ForIter] = function(self, stmt)
 end
 
 irc[ET.Loop] = function(self, stmt)
-    return { IR.LOOP, { self:stmt(stmt[2], true) } }
+    return { IR.LOOP, {
+        self:inst({ IR.LJ_LOOP }),
+        self:stmt(stmt[2], true)
+    } }
 end
 
 irc[ET.While] = function(self, stmt)
-    local loop = { self:stmt(stmt.body, true) }
-    for i=#loop,1,-1 do
-        loop[i+1] = loop[i]
-    end
-
-    loop[1] = self:inst({
-        IR.IF,
-        self:inst({ IR.NOT, self:expr(stmt.cond) }), {
-            self:inst({ IR.BREAK }),
-            self:inst({ IR.LJ_LOOP }) -- is compiled away on lua51
-        }
-    })
-    return { IR.LOOP, loop }
+    return { IR.LOOP, {
+        self:inst({
+            IR.IF,
+            self:inst({ IR.NOT, self:expr(stmt.cond) }), {
+                self:inst({ IR.BREAK }),
+                self:inst({ IR.LJ_LOOP }) -- is compiled away on lua51
+            }
+        }),
+        self:stmt(stmt.body, true)
+    } }
 end
 
 irc[ET.Lambda] = function(self, stmt)
@@ -385,24 +404,24 @@ irc[ET.Table] = function(self, expr)
     end
 
     local inarray = {}
-    local array = {}
-    local fields = {}
+    local array, hash = 0, 0
 
     -- ipairs to only iterate through contiguous keys starting from 1
-    for i,v in ipairs(t) do
+    for _,v in ipairs(t) do
         inarray[v[1]] = true
-        array[i] = { v[2], v[3] }
+        array = array + 1
     end
 
     -- get fields not in array
     for _,v in pairs(expr.fields) do
         if not inarray[v[1]] then
-            fields[#fields+1] = { self:constant(v[1]), self:compile(v[2]) }
+            hash = hash + 1
         end
     end
 
     ir[2] = array
-    ir[3] = fields
+    ir[3] = hash
+    ir[4] = expr.fields
     return ir
 end
 
@@ -494,7 +513,7 @@ irc["="] = function(self, expr)
     else
         local ll = self:expr(target.from)
         local lr
-        if target.type == ET.NameIndex then
+        if target[1] == ET.NameIndex then
             lr = self:constant(target.index.name, true)
         else -- ET.ExprIndex
             lr = self:expr(target.index)

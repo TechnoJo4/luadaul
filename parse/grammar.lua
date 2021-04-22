@@ -256,23 +256,27 @@ return function(self)
         local stmts = {}
         if not match(parser.lexer, T.RBrace) then
             while true do
-                stmts[i] = parser:stmt(false, true)
+                -- e_tok and err_s are non-nil if the parsed statement (s) is
+                -- an expression which would not be allowed as a statement
+                local s, e_tok, err_s = parser:stmt(false, true, true)
+
+                stmts[i] = s
                 i = i + 1
                 if match(parser.lexer, T.RBrace) then
+                    if err_s then
+                        s[1] = ET.Return
+                    end
                     break
                 else
+                    if err_s then
+                        return err(self, e_tok, error_t, err_s)
+                    end
                     consume_end(parser.lexer)
                 end
             end
         end
 
-        if #stmts >= 1 then
-            local s = stmts[#stmts]
-            if s[1] == ET.Expression then
-                s[1] = ET.Return
-            end
-        end
-        return { ET.Lambda, args=args, stmts=stmts }
+        return expr({ ET.Lambda, args=args, stmts=stmts })
     end
     self:def_pre(T.LBrace, block_lambda)
 

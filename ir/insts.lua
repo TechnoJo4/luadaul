@@ -20,4 +20,5 @@ return require("common.utils").enum({
     "LOOP", "NUMFOR", "ITERFOR",
     "CLOSURE",
     "NEWTABLE",
+    "LAST"
 }, true)

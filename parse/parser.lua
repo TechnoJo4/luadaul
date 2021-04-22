@@ -77,7 +77,7 @@ local disallowed_binops = enum({
     ET.Lambda, ET.NameIndex, ET.ExprIndex
 }, false, true)
 -- parse a statement
-function parser:stmt(allow_block, no_end)
+function parser:stmt(allow_block, no_end, any_expr)
     local token = self.lexer.adv()
 
     -- skip newlines and semicolons
@@ -97,12 +97,21 @@ function parser:stmt(allow_block, no_end)
         -- e.type checks if the expression is a single token (those defined with identity - literals),
         -- all tokens have a .type field, and other syntax tree nodes are arrays
         if e.type or disallowed_binops[e[1].type == T.Oper and e[1].oper or e[1]] then
-            if e.type then
-                token = e
-            elseif e[1].type then
-                token = e[1]
+            local error_s = ("%s expression is not allowed as a statement"):format(e.type or e[1])
+
+            if any_expr then
+                if not no_end then
+                    consume_end(self.lexer)
+                end
+                return expr({ ET.Expression, e }), token, error_s
+            else
+                if e.type then
+                    token = e
+                elseif e[1].type then
+                    token = e[1]
+                end
+                err(self, token, error_t, error_s)
             end
-            err(self, token, error_t, ("%s expression is not allowed as a statement"):format(e.type or e[1]))
         end
 
         stmt = expr({ ET.Expression, e })
@@ -112,6 +121,7 @@ function parser:stmt(allow_block, no_end)
     end
 
     -- ugly hack to skip newlines before EOF
+    -- TODO: not this
     if self.lexer.get(0).type ~= T.EOF then
         local i = 1
         token = self.lexer.get(i)

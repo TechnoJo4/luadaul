@@ -207,6 +207,8 @@ local function new_compiler(irc, x64)
         local_offsets={},
     }, { __index=compiler })
 
+    self.irc:finalize()
+
     for k,v in pairs(irc.protos) do
         self.protos[k] = new_compiler(v, x64):compile_chunk()
     end

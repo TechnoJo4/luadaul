@@ -53,4 +53,18 @@ base[IR.POP] = function(self, ir)
     return table.concat(bc, "")
 end
 
+base[IR.LAST] = function(self, ir)
+    local r
+    local bc = {}
+    for i=2,#ir do
+        local a, ra = self:compile(ir[i])
+        if ra ~= #ir and self.regs[ra] ~= PUSH then
+            self:reg(ra, false)
+        end
+        bc[i-1] = a
+        r = ra
+    end
+    return table.concat(bc, ""), r
+end
+
 return { same=same, base=base, PUSH=PUSH }

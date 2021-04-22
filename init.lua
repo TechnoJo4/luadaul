@@ -21,6 +21,10 @@ end
 -- TODO: make this mess not a mess
 -- TODO: create a real arg parser
 if argv[1] then
+    -- no garbage collector because that makes the compiler run fast
+    -- and the compiler only runs for extremely short periods of time anyways
+    collectgarbage("stop")
+
     local f_in = argv[1]
     local f_out = "a.lua"
     if #f_in > 5 and f_in:sub(-5, -1) == ".daul" then
@@ -45,15 +49,16 @@ if argv[1] then
         irc:stmt(stmt)
         itime = os.clock() - t2 + itime
     end
+
     local ltime = parser.lexer.time()
-    --print("Lexer   ", ltime)
-    --print("Parser  ", ptime)
-    --print("IR      ", itime)
+    print("Lexer   ", ltime)
+    print("Parser  ", ptime)
+    print("IR      ", itime)
 
     ltime = os.clock()
     local bcc = lua.new_compiler(irc, true)
     local bc = bcc:compile_main("@"..f_in)
-    --print("Bytecode", os.clock() - ltime)
+    print("Bytecode", os.clock() - ltime)
     f = io.open(f_out, "wb")
     f:write(bc)
     f:close()

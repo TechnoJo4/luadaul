@@ -12,7 +12,7 @@ Current State: Lots of TODOs, missing important Lua features, a bit of spaghetti
 
 ## Roadmap
 
-Most of these goals are very long-term, but they should serve as an idea of what I strive to achieve with daul:
+Most of these goals are very long-term, but this should serve as an idea of what I strive to achieve with daul:
   - [ ] All Lua features
   - [ ] Complete Lua 5.1 bytecode backend
   - [ ] Complete LuaJIT bytecode backend
@@ -24,6 +24,7 @@ Most of these goals are very long-term, but they should serve as an idea of what
   - [ ] Macros
 
 Missing Lua(JIT) features:
+  - [ ] Creation of tables (workaround: `loadstring("return {}")()`)
   - [ ] Multi-value operations
     - [ ] Varargs `...`
     - [ ] Multi-assingments `a, b = b, a`

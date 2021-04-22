@@ -219,7 +219,7 @@ local function get_next(source, pos, line, column)
                     err(source, pos, line, column, error_t, "Invalid escape")
                 end
                 escape = false
-            elseif c == "\\" then
+            elseif c == sbyte("\\") then
                 escape = true
             elseif c == startchar then
                 break -- returns outside of loop

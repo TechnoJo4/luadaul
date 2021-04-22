@@ -190,7 +190,7 @@ local function str_tohex(s)
     return v
 end
 
-local DEBUG_INSTS = true
+local DEBUG_INSTS = false
 local o = {}
 for k,v in pairs(opcodes) do
     if type(k) == "number" then
@@ -245,6 +245,7 @@ local function chunk(data, _strip)
         phead  = flagsB numparamsB framesizeB numuvB numkgcU numknU numbcU
                  [debuglenU [firstlineU numlineU]]
     ]=]
+
     local function reverse(tbl)
         local new = {}
         for i=1,#tbl do
@@ -254,7 +255,7 @@ local function chunk(data, _strip)
     end
 
     local kobj = reverse(data.kobj)
-    local knum = reverse(data.knum)
+    local knum = data.knum--reverse(data.knum)
     local pd = u8(data.flags) -- PROTO_CHILD | PROTO_VARARG | PROTO_FFI, see lj_obj.h
             .. u8(data.nparams)
             .. u8(data.maxstack)
@@ -288,6 +289,8 @@ local function new_compiler(irc)
         scopedepth=0, regs={}, local_offsets={},
     }, { __index=compiler })
 
+    self.irc:finalize()
+
     self.flags = 0x00
     for k,v in pairs(irc.protos) do
         self.flags = 0x01 -- PROTO_CHILD
@@ -295,10 +298,10 @@ local function new_compiler(irc)
         self.kobj[#self.kobj+1] = uleb128(KOBJ.CHILD)
     end
 
-    for k,v in pairs(irc.upvals) do
+    for k,v in ipairs(irc.upvals) do
         local i = v.i
         if not v.upval then
-            i = bor(i, v.mutable and 0x8000 or 0xc000)
+            i = bor(i, 0x8000)
         end
 
         self.upvals[k] = u16(i)
@@ -306,6 +309,7 @@ local function new_compiler(irc)
 
     -- knum   = intU0 | (loU1 hiU)
     -- kgc    = kgctypeU { ktab | (loU hiU) | (rloU rhiU iloU ihiU) | strB* }
+    self.constants = irc.constants
     for k,v in pairs(irc.constants) do
         local t = type(v)
         if t == "number" then
@@ -339,6 +343,8 @@ local function new_compiler(irc)
         end
     end
 
+    for i,v in pairs(self.knum) do print(i-1, str_tohex(v)) end
+
     return self
 end
 
@@ -349,7 +355,7 @@ end
 local DEBUG_IR = false
 function compiler:compile(ir, r, ...)
     if DEBUG_IR then
-        print(ir)
+        --print(ir)
     end
 
     local t = ir[1]
@@ -366,11 +372,15 @@ end
 
 function compiler:compile_all(tbl, allow_breaks)
     local old = self.breaks
-    self.breaks = allow_breaks or self.breaks
+    if allow_breaks then 
+        self.breaks = true
+    end
+
     local bc = {}
     for i,v in ipairs(tbl) do
         bc[i] = self:compile(v)
     end
+
     self.breaks = old
     return table.concat(bc, "")
 end
@@ -483,7 +493,7 @@ compiler.comp[IR.CONST] = function(self, v, r)
     return o[opcodes[op]](r, v), r
 end
 
--- NOTE: whenever emitting JMP, check for IR.CLOSE to potentially inline jump
+-- NOTE: whenever emitting JMP, check for IR.CLOSE beforehand and inline jump instead
 compiler.comp[IR.CLOSE] = function(self, ir)
     local min = 256
     for i=2,#ir do
@@ -493,7 +503,7 @@ compiler.comp[IR.CLOSE] = function(self, ir)
             min = r
         end
     end
-    return o.UCLO(min, 0)
+    return o.UCLO(min, 1)
 end
 
 compiler.comp[IR.CLOSURE] = function(self, v, r)
@@ -533,16 +543,18 @@ end
 
 compiler.comp[IR.IF] = function(self, v)
     local t = self:compile_all(v[3])
-    local jmp = is_jmp(t)
-    local cond = self:compile_cond(v[2], false, jmp)
-    local len = #t / 4
+    local start_jmp = is_jmp(t)
+    local cond = self:compile_cond(v[2], false, start_jmp)
+    local jmp = #t / 4 + 1
+
     if v[4] then
         local f = self:compile_all(v[4])
-        t = t..o.JMP(self:jmp_reg(), #f / 4)..f
-        len = len + 2
+        t = t..o.JMP(self:jmp_reg(), #f / 4 + 1)..f
+        jmp = jmp + 1
     end
-    if not jmp then
-        cond = cond..o.JMP(self:jmp_reg(), len)
+
+    if not start_jmp then
+        cond = cond..o.JMP(self:jmp_reg(), jmp)
     end
     return cond..t
 end
@@ -550,8 +562,10 @@ end
 compiler.comp[IR.CONDITIONAL] = function(self, v, r)
     local cond = self:compile_cond(v[2])
     r = r or self:reg()
+
     local t = self:compile(v[3], r)
     local f = self:compile(v[4], r)
+
     return cond
         .. o.JMP(self:jmp_reg(), #t / 4 + 2) .. t
         .. o.JMP(self:jmp_reg(), #f / 4 + 1) .. f, r
@@ -564,7 +578,7 @@ compiler.comp[IR.BREAK] = function(self)
     return "\xFF\xFF\xFF"..u8(self:jmp_reg())
 end
 
-local function break_replace(code, len)
+local function loop_replace(code, len)
     if len then
         len = len * 4
     else
@@ -572,22 +586,39 @@ local function break_replace(code, len)
     end
 
     local breaks = {}
+    local loops = {}
     for i=1,len,4 do
-        if code:byte(i) == 0xff then
+        local b = code:byte(i)
+        if b == 0xff then
             breaks[#breaks+1] = i - 1
+        elseif b == opcodes.LOOP then
+            loops[#loops+1] = i - 1
         end
     end
 
     len = len / 4
 
-    local last = 1
-    for i,v in ipairs(breaks) do
-        breaks[i] = code:sub(last, v) .. o.JMP(code:byte(v + 4), len - (v/4))
-        last = v + 5
+    if #breaks > 1 then
+        local last = 1
+        for i,v in ipairs(breaks) do
+            breaks[i] = code:sub(last, v) .. o.JMP(code:byte(v + 4), len - (v/4))
+            last = v + 5
+        end
+        breaks[#breaks+1] = code:sub(last)
+        code = table.concat(breaks)
     end
-    breaks[#breaks+1] = code:sub(last)
 
-    return table.concat(breaks)
+    if #loops > 1 then
+        last = 1
+        for i,v in ipairs(loops) do
+            loops[i] = code:sub(last, v) .. o.LOOP(code:byte(v + 2), len - (v/4))
+            last = v + 5
+        end
+        loops[#loops+1] = code:sub(last)
+        code = table.concat(loops)
+    end
+
+    return code
 end
 
 compiler.comp[IR.LJ_LOOP] = function(self, _v)
@@ -595,7 +626,7 @@ compiler.comp[IR.LJ_LOOP] = function(self, _v)
 end
 
 compiler.comp[IR.LOOP] = function(self, v)
-    local code = self:compile_all(v[2], true)
+    local code, breaks = self:compile_all(v[2], true)
     code = o.LOOP()..code
     local last = code:sub(-4, -1)
 
@@ -606,8 +637,58 @@ compiler.comp[IR.LOOP] = function(self, v)
         code = code..o.JMP(self:jmp_reg(), -(#code / 4))
     end
 
-    code = break_replace(code)
-    return code
+    return loop_replace(code)
+end
+
+compiler.comp[IR.NUMFOR] = function(self, v)
+    local r0 = self:reg()
+    local prep = self:compile(v[2], r0)
+            .. self:compile(v[3], self:reg(r0+1))
+            .. self:compile(v[4], self:reg(r0+2))
+
+    self:reg(r0+3, PUSH)
+    local off = self.local_offsets
+    off[#off+1] = { r0, 3 }
+
+    local code = self:compile_all(v[5], true)
+    local len = #code / 4
+    code = prep..o.FORI(r0, len + 2)..code..o.FORL(r0, -len)
+
+    self:reg(r0, false)
+    self:reg(r0+1, false)
+    self:reg(r0+2, false)
+    self:reg(r0+3, false)
+    off[#off] = nil
+
+    return loop_replace(code)
+end
+
+compiler.comp[IR.ITERFOR] = function(self, v)
+    local r0 = self:reg()
+
+    -- TODO: detect next/pairs and specialize to ISNEXT, ITERN
+    local prep = self:compile(v[2], r0)
+
+    for i=1,v[3] do
+        self:reg(r0+2+i, PUSH)
+    end
+
+    local off = self.local_offsets
+    off[#off+1] = { r0, 3 }
+
+    local code = self:compile_all(v[4], true)
+    local len = #code / 4
+    code = prep
+        .. o.JMP(self:jmp_reg(), len + 1)
+        .. code
+        .. o.ITERC(r0+3, v[3] + 1, 3)
+        .. o.ITERL(r0+3, -(len + 1))
+
+    for i=0,v[3]+2 do
+        self:reg(r0+i, false)
+    end
+    off[#off] = nil
+    return loop_replace(code)
 end
 
 local function binop(name)
@@ -618,15 +699,19 @@ local function binop(name)
 
         local a, b = "", ""
         local ra, rb = ln, rn
-        if ln then
+
+        if ln and not rn then
             ln = "N"
         else
-            a, ra = self:compile(lhs, r)
+            a, ra = self:compile(lhs)
             r = r or ra
             ln = "V"
         end
+
         if rn then
             rn = "N"
+            print(rhs[2], rb)
+            print(self.irc.constants[rhs[2]], str_tohex(self.knum[rb+1]))
         else
             b, rb = self:compile(rhs)
             r = r or ra
@@ -672,23 +757,53 @@ compiler.cond[IR.NOT] = function(self, v, invert)
     return self:compile_cond(v[2], false, not invert)
 end
 
+compiler.comp[IR.CONCAT] = function(self, v, r)
+    local move = false
+    if r then
+        for i=2,#v do
+            if self.regs[r+i-2] then
+                move = r
+                r = self:reg()
+                break
+            end
+        end
+    else
+        r = self:reg()
+    end
+
+    local bc = {}
+    local b = r
+    local c = r
+    for i=2,#v do
+        local code, reg = self:compile(v[i], self:reg(r + i - 2))
+        bc[i-1] = code
+        c = reg
+    end
+
+    local s = table.concat(bc, "")..o.CAT(move or r, b, c)
+    for i=move and b+1 or b, c do
+        self.regs[i] = false
+    end
+    return s, r
+end
+
 local function bincmp(inst, inst_i, swap)
     return function(self, v, invert)
         local lhs, rhs = v[2], v[3]
 
-        local b, rc = self:compile(rhs)
-        local a, rb = self:compile(lhs)
+        local a, ra = self:compile(lhs)
+        local b, rb = self:compile(rhs)
         if swap then
-            rc, rb = rb, rc
+            rb, ra = ra, rb
         end
 
-        local s = a..b..(invert and inst_i or inst)(rb, rc)
+        local s = a..b..(invert and inst_i or inst)(ra, rb)
 
-        if shouldpop(self, rc) then
-            self:reg(rc, false)
-        end
         if shouldpop(self, rb) then
             self:reg(rb, false)
+        end
+        if shouldpop(self, ra) then
+            self:reg(ra, false)
         end
         return s
     end
@@ -755,19 +870,19 @@ end
 compiler.cond[IR.EQ] = bineq(false)
 compiler.cond[IR.NEQ] = bineq(true)
 
-
 local function andor(c)
     return function(self, v, ra)
         ra = ra or self:reg()
 
         local lhs, rhs = v[2], v[3]
 
-        -- optimize x = x or y
+        -- optimize x = x or (y)
         if lhs[1] == IR.GETLOCAL and ra == self:localreg(lhs[2]) then
+            -- ra = register of local
             local a = self:compile(rhs, ra)
-            return (c and o.ISF or o.IST)(0, ra)
-                .. o.JMP(self:jmp_reg(), #a / 4)
-                .. a, ra
+            return (c and o.IST or o.ISF)(0, ra) -- check x
+                .. o.JMP(self:jmp_reg(), #a / 4 + 1)
+                .. a, ra -- set ra to rhs
         end
 
         local rb = self:reg()
@@ -777,22 +892,23 @@ local function andor(c)
 
         return b
             .. o.TESTSET(ra, rb, c)
-            .. o.JMP(0, #a / 4)
+            .. o.JMP(self:jmp_reg(), #a / 4 + 2)
             .. a, ra
     end
 end
 
+-- todo: optimize for truthness
 local function andor_cond(c)
     return function(self, v, invert)        
         local lhs, rhs = v[2], v[3]
         lhs = self:compile_cond(lhs, false, c)
         rhs = self:compile_cond(rhs, false, invert)
-        return lhs..o.JMP(0, #rhs / 4)..rhs
+        return lhs..o.JMP(0, #rhs / 4 + 2)..rhs
     end
 end
 
-compiler[IR.AND] = andor(false)
-compiler[IR.OR] = andor(true)
+compiler.comp[IR.AND] = andor(false)
+compiler.comp[IR.OR] = andor(true)
 compiler.cond[IR.AND] = andor_cond(false)
 compiler.cond[IR.OR] = andor_cond(true)
 
@@ -820,19 +936,19 @@ compiler.comp[IR.GETLOCAL] = function(self, v, r)
     local l = self:localreg(v[2])
     if not r or r == l then
         return "", l
-    else
-        return o.MOV(r, l), r
     end
+
+    return o.MOV(r, l), r
 end
 
 compiler.comp[IR.SETLOCAL] = function(self, v, r)
     local n = self:localreg(v[2])
     if not r or r == n then
-        return self:compile(v[3], n)
-    else
-        local code = self:compile(v[3], r)
-        return code..o.MOV(n, r), r
+        return self:compile(v[3], n), n
     end
+
+    local code = self:compile(v[3], r)
+    return code..o.MOV(n, r), r
 end
 
 compiler.comp[IR.GETUPVAL] = function(self, v, r)
@@ -886,22 +1002,33 @@ compiler.comp[IR.SETTABLE] = function(self, v, r)
 
     local n = tconst(self, v[3], opcodes.KNUM)
     if n and not r and self.kshort[v[3][2]] >= 0 and self.kshort[v[3][2]] <= 255 then
+        if shouldpop(self, rb) then
+            self:reg(rb, false)
+        end
         return b..a..o.TSETB(ra, rb, self.kshort[v[3][2]]), ra
     end
 
     n = tconst(self, v[3], opcodes.KSTR)
     if n and not r then
+        if shouldpop(self, rb) then
+            self:reg(rb, false)
+        end
         return b..a..o.TSETS(ra, rb, n), ra
     end
 
     local c, rc = self:compile(v[3])
+    if shouldpop(self, rb) then
+        self:reg(rb, false)
+    end
     return b..a..c..o.TSETV(ra, rb, rc), ra
 end
 
 compiler.comp[IR.CALL] = function(self, v, a)
     a = a or self:reg()
+
     local target
     target, a = self:compile(v[2], a)
+
     local c, nargs = 1, 0
     local bc = { target }
     if #v > 3 then
@@ -912,17 +1039,22 @@ compiler.comp[IR.CALL] = function(self, v, a)
             nargs = nargs + 1
         end
     end
+
     local nrets = v[3]
     local max = math.max(nargs+1, nrets)
     for i=0,max-1 do
         self.regs[a+i] = i < nrets
     end
+
     return table.concat(bc, "")..o.CALL(a, v[3]+1, c), a
 end
 
 compiler.comp[IR.NAMECALL] = function(self, v, a)
-    local from, b = self:compile(v[2], self:reg(a + 1))
-    local target = o.TGETS(a, b, self.const_i[v[3]])
+    a = a or self:reg()
+
+    local from, b = self:compile(v[2], self:reg(a))
+    local target = o.MOV(a + 1, a)..o.TGETS(a, b, self.const_i[v[3]])
+
     local c, nargs = 2, 1
     local bc = { from, target }
     if #v > 4 then
@@ -933,11 +1065,13 @@ compiler.comp[IR.NAMECALL] = function(self, v, a)
             nargs = nargs + 1
         end
     end
+
     local nrets = v[4]
     local max = math.max(nargs+1, nrets)
     for i=0,max-1 do
         self.regs[a+i] = i < nrets
     end
+
     return table.concat(bc, "")..o.CALL(a, v[4]+1, c), a
 end
 
@@ -952,11 +1086,12 @@ function compiler:compile_chunk()
         self.code[i] = code
         self.ninsts = self.ninsts + #code / 4
     end
-    local last = self.code[#self.code]
-    last = string.byte(last:sub(-4,-4))
-    if last ~= opcodes.RET0 and last ~= opcodes.RET1 and last ~= opcodes.RET and last ~= opcodes.RETM then
-        self.code[#self.code+1] = o.RET0(0, 1)
-        self.ninsts = self.ninsts + 1
+
+    self.code[#self.code+1] = o.RET0(0, 1)
+    self.ninsts = self.ninsts + 1
+
+    if DEBUG_REGS then
+        print("chunk end - first unused", self:jmp_reg())
     end
 
     return chunk(self)
@@ -968,6 +1103,11 @@ function compiler:compile_main(name)
     -- STRIP 0x02
     -- FR2   0x08
     local main = "\x1BLJ\x02" .. uleb128(2) .. self:compile_chunk() .. uleb128(0)
+
+    if DEBUG_IR then
+        print(self.irc)
+    end
+
     return main
 end
 

@@ -8,8 +8,5 @@ let fib_rec = { n ->
             fib_rec(n - 2) + fib_rec(n - 1)
 }
 
-let i = 27
-while (i < 40) {
+for (i=27,40,2)
     time(fib_rec, i)
-    i = i + 1
-}

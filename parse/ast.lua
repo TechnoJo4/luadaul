@@ -97,6 +97,13 @@ local ET_tostring = {
             "index="..tostr(expr.index, lvl)
         }
     end,
+    [ET.ExprIndex] = function(expr, lvl)
+        return {
+            "ExprIndex",
+            "from="..tostr(expr.from, lvl),
+            "index="..tostr(expr.index, lvl)
+        }
+    end,
     [ET.Return] = function(expr, lvl)
         return { "Return", tostr(expr[2], lvl) }
     end,
@@ -108,13 +115,21 @@ local ET_tostring = {
     end,
     [ET.Declare] = function(expr, lvl)
         return {
-            "Declare ("..tostr(expr[2], lvl)..")",
+            "Declare",
             "name="..tostr(expr.name, lvl),
             "value="..tostr(expr.value, lvl)
         }
     end,
     [ET.Block] = function(expr, lvl)
         local stmts = { "Block" }
+        for k,v in pairs(expr.stmts) do
+            stmts[k+1] = (" "):rep(k > 1 and lvl or 0) .. tostr(v, lvl)
+        end
+
+        return stmts
+    end,
+    [ET.Lambda] = function(expr, lvl)
+        local stmts = { "Lambda" }
         for k,v in pairs(expr.stmts) do
             stmts[k+1] = (" "):rep(k > 1 and lvl or 0) .. tostr(v, lvl)
         end
@@ -144,6 +159,28 @@ local ET_tostring = {
             tostr(expr.branch, lvl)
         }
     end,
+    [ET.ForNum] = function(expr, lvl)
+        return {
+            "ForNum",
+            expr.name.."=",
+            "start="..tostr(expr.start, lvl),
+            "stop="..tostr(expr.stop, lvl),
+            "step="..expr.step and tostr(expr.step, lvl) or "none",
+            tostr(expr.body, lvl)
+        }
+    end,
+    [ET.ForIter] = function(expr, lvl)
+        local names = {}
+        for i,v in ipairs(expr.names) do
+            names[i] = v.name
+        end
+        return {
+            "ForIter",
+            "names="..table.concat(names, ", "),
+            "iter="..tostr(expr.iter, lvl),
+            tostr(expr.body, lvl)
+        }
+    end,
     [ET.Loop] = function(expr, lvl)
         return { "Loop", tostr(expr[2], lvl) }
     end,
@@ -156,6 +193,7 @@ expr_tostring = function(expr, lvl)
     lvl = lvl or 0
     local t
     if ET[expr[1]] then
+        if not ET_tostring[expr[1]] then error(expr[1]) end
         t = ET_tostring[expr[1]](expr, lvl)
     else
         t = {}
