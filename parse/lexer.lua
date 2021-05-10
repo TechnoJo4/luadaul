@@ -1,7 +1,7 @@
-local T = require("parse.token")
-local token = require("parse.ast").token
+local T = require("parse/token")
+local token = require("parse/ast").token
 
-local errors = require("common.errors")
+local errors = require("common/errors")
 local error_t = errors.types.syntax_error
 local function err(...)
     errors.at_pos(...)
@@ -59,6 +59,7 @@ local double_quote = sbyte('"')
 local function oper(c)
     -- +-*/%<=>#.:^?!$@|&~
     -- refer to ascii table
+    -- TODO: precompute sbyte
     return c == sbyte("!")
         or c >= sbyte("#") and c <= sbyte("&") -- # $ % &
         or c >= sbyte("-") and c <= sbyte("/") -- - . /
@@ -121,11 +122,15 @@ local function lex_rep(source, pos, line, column, check, ttype, key, action, pre
         local str = source:sub(start, pos - 1)
 
         if action then
-            str = action(pre and pre..str or str)
+            if pre then
+                str = action(pre .. str)
+            else
+                str = action(str)
+            end
         end
 
         if not ttype then
-            return str, pos - start, startl, startc
+            return str, pos, startl, column
         end
 
         return token({
@@ -223,6 +228,8 @@ local function get_next(source, pos, line, column)
                 escape = true
             elseif c == startchar then
                 break -- returns outside of loop
+            elseif c == sbyte("\r") or c == sbyte("\n") then
+                err(source, pos, line, column, error_t, "Unfinished string")
             else
                 data = data .. string.char(c)
             end

@@ -1,9 +1,9 @@
 -- Parser -> IR (you are here) -> Bytecode Emitters
 
-local T = require("parse.token")
-local ast = require("parse.ast")
-local opts = require("ir.optimize")
-local IR = require("ir.insts")
+local T = require("parse/token")
+local ast = require("parse/ast")
+local opts = require("ir/optimize")
+local IR = require("ir/insts")
 
 local ET = ast.expr_types
 

@@ -3,8 +3,8 @@
 
 local bit = require("bit")
 local ffi = require("ffi")
-local IR = require("ir.insts")
-local base = require("emit.base")
+local IR = require("ir/insts")
+local base = require("emit/base")
 local same = base.same
 
 local PUSH = base.PUSH

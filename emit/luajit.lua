@@ -3,9 +3,9 @@
 
 local bit = require("bit")
 local ffi = require("ffi")
-local IR = require("ir.insts")
-local base = require("emit.base")
-local enum = require("common.utils").enum
+local IR = require("ir/insts")
+local base = require("emit/base")
+local enum = require("common/utils").enum
 
 local bor, band, rshift, lshift = bit.bor, bit.band, bit.rshift, bit.lshift
 

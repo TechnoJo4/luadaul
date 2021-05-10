@@ -1,8 +1,8 @@
-local utils = require("common.utils")
-local ast = require("parse.ast")
+local utils = require("common/utils")
+local ast = require("parse/ast")
 
-local P = require("parse.precedence")
-local T = require("parse.token")
+local P = require("parse/precedence")
+local T = require("parse/token")
 local ET = ast.expr_types
 
 local enum = utils.enum
@@ -10,7 +10,7 @@ local expr = ast.expr
 
 local DEBUG_ERRORS = true
 
-local errors = require("common.errors")
+local errors = require("common/errors")
 local error_t = errors.types.syntax_error
 local function err(o, ...)
     errors.at_token(o.source, ...)

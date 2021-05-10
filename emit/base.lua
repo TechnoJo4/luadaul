@@ -1,4 +1,4 @@
-local IR = require("ir.insts")
+local IR = require("ir/insts")
 local PUSH = setmetatable({}, { __tostring=function()
     return "[PUSH]"
 end })

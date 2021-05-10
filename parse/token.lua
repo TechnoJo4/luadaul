@@ -1,5 +1,5 @@
 -- types of tokens
-local enum = require("common.utils").enum({
+local enum = require("common/utils").enum({
     "Oper",
     "Number",
     "String",

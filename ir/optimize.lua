@@ -1,10 +1,10 @@
-local IR = require("ir.insts")
+local IR = require("ir/insts")
 
 -- http://wiki.luajit.org/Optimizations
 
-local fold = require("ir.opt.fold")
-local bool_fold = require("ir.opt.bool_fold")
-local concat_fold = require("ir.opt.concat_fold")
+local fold = require("ir/opt/fold")
+local bool_fold = require("ir/opt/bool_fold")
+local concat_fold = require("ir/opt/concat_fold")
 
 local function inst(ir, irc)
     ir = fold(ir, irc)
@@ -14,7 +14,7 @@ local function inst(ir, irc)
     return ir
 end
 
-local fix_consts = require("ir.opt.remove_unused_constants")
+local fix_consts = require("ir/opt/remove_unused_consts")
 
 local function final(irc)
     fix_consts(irc)

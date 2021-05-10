@@ -1,8 +1,8 @@
-local ast = require("parse.ast")
-local ilexer = require("parse.lexer")
-local grammar = require("parse.grammar")
-local stream = require("common.stream")
-local utils = require("common.utils")
+local ast = require("parse/ast")
+local ilexer = require("parse/lexer")
+local grammar = require("parse/grammar")
+local stream = require("common/stream")
+local utils = require("common/utils")
 
 local enum = utils.enum
 local T = ilexer.token_types
@@ -11,7 +11,7 @@ local expr = ast.expr
 
 local DEBUG_ERRORS = true
 
-local errors = require("common.errors")
+local errors = require("common/errors")
 local error_t = errors.types.syntax_error
 local function err(o, ...)
     errors.at_token(o.source, ...)
@@ -50,7 +50,7 @@ local function consume_end(lexer)
     return token
 end
 
-local P = require("parse.precedence")
+local P = require("parse/precedence")
 
 local parser = {}
 local parser_meta = { __index=parser }

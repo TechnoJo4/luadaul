@@ -1,4 +1,4 @@
-return require("common.utils").enum({
+return require("common/utils").enum({
     "NIL", "TRUE", "FALSE", "CONST",
     "GETTABLE", "SETTABLE",
     "GETLOCAL", "SETLOCAL",

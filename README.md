@@ -4,7 +4,7 @@
   <img width="256px" src="logo/daul.png"/>
 </p>
 
-daul is a language that compiles to Lua and LuaJIT bytecode.
+daul is a language that compiles to LuaJIT bytecode.
 
 Some examples are available in the `examples` directory.
 

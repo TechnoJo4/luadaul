@@ -1,3 +1,5 @@
+local IR = require("ir/insts")
+
 local arr_insts = {
     [IR.LOOP] = { [2] = true },
     [IR.IF] = { [3] = true, [4] = true },

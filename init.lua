@@ -1,22 +1,11 @@
-local T = require("parse.token")
-local parse = require("parse.parser")
-local ir = require("ir.compile")
-local lua = require("emit.luajit")
+local T = require("parse/token")
+local parse = require("parse/parser")
+local ir = require("ir/compile")
+local lua = require("emit/luajit")
 
 -- warning: this file is horrible and very temporary
 
-local argv
--- selene: allow(undefined_variable)
-if process then -- luvi/luvit support
-    argv = {}
-    for k,v in ipairs(process.argv) do
-        if k > 1 then
-            argv[k-1] = v
-        end
-    end
-else
-    argv = { ... }
-end
+local argv = { ... }
 
 -- TODO: make this mess not a mess
 -- TODO: create a real arg parser

@@ -1,4 +1,4 @@
-local IR = require("ir.insts")
+local IR = require("ir/insts")
 
 -- typecheck
 local function tc(a, b, at, bt)

@@ -1,6 +1,6 @@
 --# selene: allow(multiple_statements)
 
-local types = require("common.utils").enum({
+local types = require("common/utils").enum({
     "syntax_error",
     "compile_error",
     "warning"
