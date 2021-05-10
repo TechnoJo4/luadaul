@@ -16,3 +16,4 @@ examples/*lines.daul
 /*.lua
 /*.daul
 !init.lua
+!luvit-loader.lua
