@@ -12,10 +12,10 @@ examples/*.lua
 # compiler benchmark files
 examples/*lines.daul
 
-# lua and daul files in the root (except init) are usually temporary and/or for testing
+# lua and daul files in the root are usually temporary and/or for testing
 /*.lua
 /*.daul
+# except these
 !init.lua
 !main.lua
 !package.lua
-!luvit-loader.lua

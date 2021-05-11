@@ -6,6 +6,8 @@
 
 daul is a language that compiles to LuaJIT bytecode.
 
+No external dependencies.
+
 Some examples are available in the `examples` directory.
 
 Current State: Lots of TODOs, missing important Lua features, a bit of spaghetti, and probably bugs.
@@ -14,7 +16,6 @@ Current State: Lots of TODOs, missing important Lua features, a bit of spaghetti
 
 Most of these goals are very long-term, but this should serve as an idea of what I strive to achieve with daul:
   - [ ] All Lua features
-  - [ ] Complete Lua 5.1 bytecode backend
   - [ ] Complete LuaJIT bytecode backend
   - [ ] Inline functions
   - [ ] Self-hosting

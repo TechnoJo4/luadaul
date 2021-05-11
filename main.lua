@@ -1,3 +1,4 @@
+-- luvi main
 local has_luvi, luvi = pcall(require, 'luvi')
 
 local function bundle_load(file, ...)
@@ -8,5 +9,5 @@ local function bundle_load(file, ...)
     end
 end
 
-bundle_load("luvit-loader.lua")
+bundle_load("common/luvit-loader.lua")
 return bundle_load("init.lua", ...)

@@ -1,9 +1,9 @@
 return {
     name = "luadaul",
-    version = "0.1.0-beta0",
+    version = "0.1.0",
     description = "The daul compiler",
-    tags = { "lua" },
-    license = "MIT",
+    tags = { "lua", "luajit" },
+    license = "BSD-2-Clause",
     author = { name = "TechnoJo4", email = "technojo4@gmail.com" },
     homepage = "https://github.com/TechnoJo4/luadaul",
     dependencies = {},
@@ -11,8 +11,6 @@ return {
         "LICENSE",
         "README.md",
         "package.lua",
-
-        "luvit-loader.lua",
 
         "init.lua",
         "main.lua",
