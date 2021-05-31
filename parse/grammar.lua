@@ -56,12 +56,11 @@ end
 local function match_oper(lexer, oper)
     local i = 1
     local token = lexer.get(i)
-    if ttype ~= T.Newline then
-        while token.type == T.Newline do
-            i = i + 1
-            token = lexer.get(i)
-        end
+    while token.type == T.Newline do
+        i = i + 1
+        token = lexer.get(i)
     end
+
     if token.type == T.Oper or token.oper == oper then
         return lexer.adv(i)
     end
@@ -191,13 +190,9 @@ return function(self)
                 f[#f+1] = { expr({ ET.TableKey, i }), parser:expr() }
             end
 
-            if match(parser.lexer, T.Newline) then
-                -- nothing, go to next field
-            elseif match(parser.lexer, T.Semi) then
-                -- nothing, go to next field
-            elseif match(parser.lexer, T.Comma) then
-                -- nothing, go to next field
-            else
+            if not (match(parser.lexer, T.Newline) or
+                    match(parser.lexer, T.Semi) or
+                    match(parser.lexer, T.Comma)) then
                 consume(parser.lexer, T.RBrace, " after table fields")
                 break
             end

@@ -10,4 +10,6 @@ local function bundle_load(file, ...)
 end
 
 bundle_load("common/luvit-loader.lua")
+
+-- selene: allow(undefined_variable)
 return bundle_load("init.lua", ...)

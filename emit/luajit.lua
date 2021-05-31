@@ -343,8 +343,6 @@ local function new_compiler(irc)
         end
     end
 
-    for i,v in pairs(self.knum) do print(i-1, str_tohex(v)) end
-
     return self
 end
 
@@ -355,7 +353,7 @@ end
 local DEBUG_IR = false
 function compiler:compile(ir, r, ...)
     if DEBUG_IR then
-        --print(ir)
+        print(ir)
     end
 
     local t = ir[1]
@@ -537,8 +535,13 @@ compiler.comp[IR.RETURN] = function(self, v)
         self:reg(ra, false)
     end
 
+    local uclo = ""
+    if v[3] then
+        uclo = o.UCLO(v[3], 1)
+    end
+
     -- TODO: multiple returns
-    return a..o.RET1(ra, 2)
+    return a..uclo..o.RET1(ra, 2)
 end
 
 compiler.comp[IR.IF] = function(self, v)
@@ -585,40 +588,16 @@ local function loop_replace(code, len)
         len = #code
     end
 
-    local breaks = {}
-    local loops = {}
-    for i=1,len,4 do
-        local b = code:byte(i)
+    return code:gsub("()(....)", function(pos, inst)
+        local b = inst:byte(1)
         if b == 0xff then
-            breaks[#breaks+1] = i - 1
-        elseif b == opcodes.LOOP then
-            loops[#loops+1] = i - 1
+            return o.JMP(inst:byte(4), len - (pos / 4))
+        elseif b == opcodes.LOOP and inst:byte(3) == 0xff and inst:byte(4) == 0xff then
+            return o.LOOP(inst:byte(2), len - (pos / 4))
         end
-    end
 
-    len = len / 4
-
-    if #breaks > 1 then
-        local last = 1
-        for i,v in ipairs(breaks) do
-            breaks[i] = code:sub(last, v) .. o.JMP(code:byte(v + 4), len - (v/4))
-            last = v + 5
-        end
-        breaks[#breaks+1] = code:sub(last)
-        code = table.concat(breaks)
-    end
-
-    if #loops > 1 then
-        last = 1
-        for i,v in ipairs(loops) do
-            loops[i] = code:sub(last, v) .. o.LOOP(code:byte(v + 2), len - (v/4))
-            last = v + 5
-        end
-        loops[#loops+1] = code:sub(last)
-        code = table.concat(loops)
-    end
-
-    return code
+        return inst
+    end)
 end
 
 compiler.comp[IR.LJ_LOOP] = function(self, _v)
@@ -626,8 +605,7 @@ compiler.comp[IR.LJ_LOOP] = function(self, _v)
 end
 
 compiler.comp[IR.LOOP] = function(self, v)
-    local code, breaks = self:compile_all(v[2], true)
-    code = o.LOOP()..code
+    local code = self:compile_all(v[2], true)
     local last = code:sub(-4, -1)
 
     if getop(last) == 50 then -- UCLO
@@ -710,8 +688,6 @@ local function binop(name)
 
         if rn then
             rn = "N"
-            print(rhs[2], rb)
-            print(self.irc.constants[rhs[2]], str_tohex(self.knum[rb+1]))
         else
             b, rb = self:compile(rhs)
             r = r or ra
@@ -1025,10 +1001,7 @@ end
 
 compiler.comp[IR.CALL] = function(self, v, a)
     a = a or self:reg()
-
-    local target
-    target, a = self:compile(v[2], a)
-
+    local target = self:compile(v[2], a)
     local c, nargs = 1, 0
     local bc = { target }
     if #v > 3 then
@@ -1043,16 +1016,20 @@ compiler.comp[IR.CALL] = function(self, v, a)
     local nrets = v[3]
     local max = math.max(nargs+1, nrets)
     for i=0,max-1 do
-        self.regs[a+i] = i < nrets
+        if shouldpop(self, a+i) then
+            if DEBUG_REGS then
+                print("call pop", a+i, i < nrets)
+            end
+            self.regs[a+i] = i < nrets
+        end
     end
 
     return table.concat(bc, "")..o.CALL(a, v[3]+1, c), a
 end
 
-compiler.comp[IR.NAMECALL] = function(self, v, a)
-    a = a or self:reg()
-
-    local from, b = self:compile(v[2], self:reg(a))
+compiler.comp[IR.NAMECALL] = function(self, v, ra)
+    local a = ra or self:reg()
+    local from, b = self:compile(v[2], a)
     local target = o.MOV(a + 1, a)..o.TGETS(a, b, self.const_i[v[3]])
 
     local c, nargs = 2, 1
@@ -1069,10 +1046,13 @@ compiler.comp[IR.NAMECALL] = function(self, v, a)
     local nrets = v[4]
     local max = math.max(nargs+1, nrets)
     for i=0,max-1 do
+        if DEBUG_REGS then
+            print("call pop", a+i, i < nrets)
+        end
         self.regs[a+i] = i < nrets
     end
 
-    return table.concat(bc, "")..o.CALL(a, v[4]+1, c), a
+    return table.concat(bc, "")..o.CALL(ra, v[4]+1, c), a
 end
 
 function compiler:compile_chunk()

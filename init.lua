@@ -5,6 +5,7 @@ local lua = require("emit/luajit")
 
 -- warning: this file is horrible and very temporary
 
+-- selene: allow(undefined_variable)
 local argv = { ... }
 
 -- TODO: make this mess not a mess

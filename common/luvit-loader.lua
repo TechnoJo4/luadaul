@@ -35,10 +35,6 @@ else
   isWindows = not not package.path:match("\\")
 end
 
-local tmpBase = isWindows and (getenv("TMP") or uv.cwd()) or
-                              (getenv("TMPDIR") or '/tmp')
-local binExt = isWindows and ".dll" or ".so"
-
 local getPrefix, splitPath, joinParts
 if isWindows then
   -- Windows aware path utilities
@@ -224,7 +220,8 @@ table.insert(package.loaders, 1, function (path)
     return
   end
 
-  local level, caller = 3
+  local level = 3
+  local caller
   -- Loop past any C functions to get to the real caller
   -- This avoids pcall(require, "path") getting "=C" as the source
   repeat

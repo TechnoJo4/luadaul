@@ -6,6 +6,8 @@ This document serves as a general outline of the codebase's structure, and the d
 
 No code in the repo should generate warnings or errors from the [selene linter](https://kampfkarren.github.io/selene/selene.html).
 
+Files should remain relatively small, or at least avoid becoming gigantic. Split code into reasonably-sized files, as needed.
+
 ## Compiler outline
 
 The `common` directory contains common utilities like `enum` and error reporting, common to multiple stages of the compiler.

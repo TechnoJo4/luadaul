@@ -261,7 +261,13 @@ irc[ET.Expression] = function(self, stmt)
 end
 
 irc[ET.Return] = function(self, stmt)
-    return { IR.RETURN, self:expr(stmt[2]) }
+    local min
+    for i=#self.locals,1,-1 do
+        if self.locals[i].close then
+            min = i
+        end
+    end
+    return { IR.RETURN, self:expr(stmt[2]), min }
 end
 
 irc[ET.Break] = function(self, _stmt)

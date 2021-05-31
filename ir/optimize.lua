@@ -1,5 +1,3 @@
-local IR = require("ir/insts")
-
 -- http://wiki.luajit.org/Optimizations
 
 local fold = require("ir/opt/fold")
