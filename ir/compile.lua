@@ -145,6 +145,9 @@ function irc:resolve(name, set, new_uv)
             if new_uv then
                 self.locals[i].close = true
             end
+            if set then
+                self.locals[i].mutable = true
+            end
 
             return set and IR.SETLOCAL or IR.GETLOCAL, i-1
         end
@@ -154,10 +157,7 @@ function irc:resolve(name, set, new_uv)
         local u = self.upvals[i]
         if u.name == name then
             if set then
-                while u.upval and not u.mutable do
-                    u = self.parent.upvals[u.i]
-                    u.mutable = true
-                end
+                u.l.mutable = true
                 return IR.SETUPVAL, i-1
             end
             return IR.GETUPVAL, i-1
@@ -168,7 +168,11 @@ function irc:resolve(name, set, new_uv)
         local ir, i = self.parent:resolve(name, set, true)
         if i then
             local ir2 = set and IR.SETUPVAL or IR.GETUPVAL
-            self.upvals[#self.upvals+1] = { name=name, i=i, upval=ir == ir2, mutable=set }
+            if ir == ir2 then
+                self.upvals[#self.upvals+1] = { name=name, i=i, upval=true, l=self.parent.upvals[i+1].l }
+            else
+                self.upvals[#self.upvals+1] = { name=name, i=i, upval=false, l=self.parent.locals[i+1] }
+            end
             self.nupvals = self.nupvals + 1
             return ir2, self.nupvals-1
         end

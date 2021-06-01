@@ -301,7 +301,11 @@ local function new_compiler(irc)
     for k,v in ipairs(irc.upvals) do
         local i = v.i
         if not v.upval then
-            i = bor(i, 0x8000)
+            if v.l.mutable then
+                i = bor(i, 0x8000)
+            else
+                i = bor(i, 0xC000)
+            end
         end
 
         self.upvals[k] = u16(i)
