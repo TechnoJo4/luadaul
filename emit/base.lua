@@ -22,7 +22,7 @@ base[IR.PUSH] = function(self, ir)
     local bc = {}
     for i=2,#ir do
         if type(ir[i]) == "number" then
-            self:reg(ir[i], PUSH)
+            self:reg(self:localreg(ir[i]), PUSH)
             bc[i-1] = ""
         else
             local a, ra = self:compile(ir[i])
@@ -37,7 +37,7 @@ base[IR.POP] = function(self, ir)
     local bc = {}
     for i=2,#ir do
         if type(ir[i]) == "number" then
-            self:reg(ir[i], false)
+            self:reg(self:localreg(ir[i]), false)
             bc[i-1] = ""
         else
             -- pushes are important allocations (i.e. locals),

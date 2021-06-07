@@ -354,7 +354,7 @@ local function shouldpop(self, r)
     return r < 255 and self.regs[r] ~= PUSH
 end
 
-local DEBUG_IR = false
+local DEBUG_IR = true
 function compiler:compile(ir, r, ...)
     if DEBUG_IR then
         print(ir)
@@ -586,10 +586,8 @@ compiler.comp[IR.BREAK] = function(self)
 end
 
 local function loop_replace(code, len)
-    if len then
-        len = len * 4
-    else
-        len = #code
+    if not len then
+        len = #code / 4
     end
 
     return code:gsub("()(....)", function(pos, inst)
@@ -624,9 +622,9 @@ end
 
 compiler.comp[IR.NUMFOR] = function(self, v)
     local r0 = self:reg()
-    local prep = self:compile(v[2], r0)
-            .. self:compile(v[3], self:reg(r0+1))
-            .. self:compile(v[4], self:reg(r0+2))
+    local prep = self:compile(v[2], self:reg(r0, PUSH))
+            .. self:compile(v[3], self:reg(r0+1, PUSH))
+            .. self:compile(v[4], self:reg(r0+2, PUSH))
 
     self:reg(r0+3, PUSH)
     local off = self.local_offsets
@@ -715,11 +713,11 @@ local function binop(name)
     end
 end
 local function unop(inst)
-    return function(self, v, r)
-        local a
-        a, r = self:compile(v[2], r)
-        local s = a..inst(r, r)
-        return s, r
+    return function(self, v, ra)
+        ra = ra or self:reg()
+        local a, r = self:compile(v[2])
+        local s = a..inst(ra, r)
+        return s, ra
     end
 end
 
@@ -896,9 +894,11 @@ function compiler:localreg(idx)
     for i=1,#self.local_offsets do
         local off = self.local_offsets[i]
         if idx >= off[1] then
+            print(idx, idx + off[2])
             idx = idx + off[2]
         end
     end
+    print(idx)
     return idx
 end
 
@@ -960,7 +960,7 @@ end
 
 compiler.comp[IR.GETTABLE] = function(self, v, ra)
     local b, rb = self:compile(v[2], ra)
-    ra = ra or rb
+    ra = ra or self:reg()
 
     local n = tconst(self, v[3], opcodes.KNUM)
     if n and self.kshort[v[3][2]] >= 0 and self.kshort[v[3][2]] <= 255 then
@@ -1033,8 +1033,14 @@ end
 
 compiler.comp[IR.NAMECALL] = function(self, v, ra)
     local a = ra or self:reg()
-    local from, b = self:compile(v[2], a)
-    local target = o.MOV(a + 1, a)..o.TGETS(a, b, self.const_i[v[3]])
+    local from, target, b
+    if v[2][1] == IR.GETLOCAL then
+        from, b = "", self:localreg(v[2][2])
+        target = o.MOV(a + 1, b)..o.TGETS(a, b, self.const_i[v[3]])
+    else
+        from, b = self:compile(v[2], a)
+        target = o.MOV(a + 1, a)..o.TGETS(a, b, self.const_i[v[3]])
+    end
 
     local c, nargs = 2, 1
     local bc = { from, target }

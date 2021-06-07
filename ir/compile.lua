@@ -268,7 +268,7 @@ irc[ET.Return] = function(self, stmt)
     local min
     for i=#self.locals,1,-1 do
         if self.locals[i].close then
-            min = i
+            min = i - 1
         end
     end
     return { IR.RETURN, self:expr(stmt[2]), min }
