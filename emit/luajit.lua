@@ -423,7 +423,7 @@ function compiler:compile_cond(ir, tobool, invert, ...)
     return code, tobool
 end
 
-local DEBUG_REGS = false
+local DEBUG_REGS = true
 function compiler:jmp_reg()
     for i=0,255 do
         if not self.regs[i] then
@@ -684,7 +684,9 @@ local function binop(name)
             ln = "N"
         else
             a, ra = self:compile(lhs)
-            r = r or ra
+            if shouldpop(self, ra) then
+                r = r or ra
+            end
             ln = "V"
         end
 
@@ -692,7 +694,9 @@ local function binop(name)
             rn = "N"
         else
             b, rb = self:compile(rhs)
-            r = r or ra
+            if shouldpop(self, rb) then
+                r = r or rb
+            end
             rn = "V"
         end
         r = r or self:reg()
@@ -894,11 +898,9 @@ function compiler:localreg(idx)
     for i=1,#self.local_offsets do
         local off = self.local_offsets[i]
         if idx >= off[1] then
-            print(idx, idx + off[2])
             idx = idx + off[2]
         end
     end
-    print(idx)
     return idx
 end
 
@@ -915,6 +917,7 @@ end
 compiler.comp[IR.GETLOCAL] = function(self, v, r)
     local l = self:localreg(v[2])
     if not r or r == l then
+        print(v, l)
         return "", l
     end
 
@@ -964,15 +967,24 @@ compiler.comp[IR.GETTABLE] = function(self, v, ra)
 
     local n = tconst(self, v[3], opcodes.KNUM)
     if n and self.kshort[v[3][2]] >= 0 and self.kshort[v[3][2]] <= 255 then
+        if shouldpop(self, rb) then
+            self:reg(rb, false)
+        end
         return b..o.TGETB(ra, rb, self.kshort[v[3][2]]), ra
     end
 
     n = tconst(self, v[3], opcodes.KSTR)
     if n then
+        if shouldpop(self, rb) then
+            self:reg(rb, false)
+        end
         return b..o.TGETS(ra, rb, n), ra
     end
 
     local c, rc = self:compile(v[3])
+    if shouldpop(self, rb) then
+        self:reg(rb, false)
+    end
     return b..c..o.TGETV(ra, rb, rc), ra
 end
 
@@ -1000,10 +1012,15 @@ compiler.comp[IR.SETTABLE] = function(self, v, r)
     if shouldpop(self, rb) then
         self:reg(rb, false)
     end
-    return b..a..c..o.TSETV(ra, rb, rc), ra
+    return b..c..a..o.TSETV(ra, rb, rc), ra
 end
 
 compiler.comp[IR.CALL] = function(self, v, a)
+    local ra
+    if a and v[3] == 1 and #v > 3 and a < self:jmp_reg()-1 then
+        ra, a = a, self:reg()
+    end
+
     a = a or self:reg()
     local target = self:compile(v[2], a)
     local c, nargs = 1, 0
@@ -1017,6 +1034,8 @@ compiler.comp[IR.CALL] = function(self, v, a)
         end
     end
 
+    bc[#bc+1] = o.CALL(a, v[3]+1, c)
+
     local nrets = v[3]
     local max = math.max(nargs+1, nrets)
     for i=0,max-1 do
@@ -1028,11 +1047,20 @@ compiler.comp[IR.CALL] = function(self, v, a)
         end
     end
 
-    return table.concat(bc, "")..o.CALL(a, v[3]+1, c), a
+    if ra then
+        bc[#bc+1] = o.MOV(ra, a)
+        self:reg(a, false)
+    end
+    return table.concat(bc, ""), ra or a
 end
 
-compiler.comp[IR.NAMECALL] = function(self, v, ra)
-    local a = ra or self:reg()
+compiler.comp[IR.NAMECALL] = function(self, v, a)
+    local ra
+    if a and v[3] == 1 and #v > 4 and a < self:jmp_reg()-1 then
+        ra, a = a, self:reg()
+    end
+
+    a = a or self:reg()
     local from, target, b
     if v[2][1] == IR.GETLOCAL then
         from, b = "", self:localreg(v[2][2])
@@ -1053,6 +1081,8 @@ compiler.comp[IR.NAMECALL] = function(self, v, ra)
         end
     end
 
+    bc[#bc+1] = o.CALL(a, v[4]+1, c)
+
     local nrets = v[4]
     local max = math.max(nargs+1, nrets)
     for i=0,max-1 do
@@ -1062,7 +1092,11 @@ compiler.comp[IR.NAMECALL] = function(self, v, ra)
         self.regs[a+i] = i < nrets
     end
 
-    return table.concat(bc, "")..o.CALL(ra, v[4]+1, c), a
+    if ra then
+        bc[#bc+1] = o.MOV(ra, a)
+        self:reg(a, false)
+    end
+    return table.concat(bc, ""), a
 end
 
 function compiler:compile_chunk()

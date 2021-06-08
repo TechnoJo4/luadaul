@@ -158,7 +158,7 @@ local function get_next(source, pos, line, column)
         if c == newline then
             line = line + 1
             column = 1
-            return token({ type = T.Newline, pos = pos-1, line = line, column = 0 }), pos, line, column
+            return token({ type=T.Newline, len=1, pos=pos-1, line=line, column=0 }), pos, line, column
         elseif c == tab then
             column = column + 4
         else
@@ -174,7 +174,7 @@ local function get_next(source, pos, line, column)
             if c == newline or (c == _r and sbyte(source, pos) ~= newline) then
                 line = line + 1
                 column = 1
-                return token({ type = T.Newline, pos = pos-1, line = line, column = 0 }), pos, line, column
+                return token({ type=T.Newline, len=1, pos=pos-1, line=line, column=0 }), pos, line, column
             end
             c = sbyte(source, pos)
         end
