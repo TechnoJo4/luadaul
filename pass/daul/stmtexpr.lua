@@ -63,11 +63,23 @@ return require("pass.traverse") {
 
 	["assign"] = function(ir, recurse, edit, gen)
 		recurse(ir, 2)
+		recurse(ir, 3)
 
 		local vt = ir[3][1]
-		if stmts[vt] then
+		if vt == "block" then
+			local block = ir[3]
+			if ir[2][1] == "name" then
+				block[#block] = { "assign", ir[2], block[#block] }
+				block[#block+1] = ir[2]
+			else
+				local name = gen()
+				block[#block] = { "local", { name }, block[#block] }
+				block[#block+1] = { "assign", ir[2], { "name", name } }
+				block[#block+1] = { "name", name }
+			end
+			edit(ir[3])
+		elseif stmts[vt] then
 			if vt == "return" then -- return never gives a value, so we can discard
-				recurse(ir, 3)
 				edit(ir[3])
 			end
 
@@ -86,7 +98,6 @@ return require("pass.traverse") {
 				end
 			end
 		else
-			recurse(ir, 3)
 			if ir[2][1] == "name" then
 				edit({ "block", ir, ir[2] })
 			elseif ir[3][1] == "name" then

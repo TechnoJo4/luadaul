@@ -56,6 +56,7 @@ return function(parser)
 				tok2 = parser.tokens[go(1)+1]
 			end
 			if tok2[2] == "}" or (not tok and not tok2[2]) then --{
+				go(1)
 				break
 			end
 
