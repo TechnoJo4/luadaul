@@ -1,9 +1,12 @@
 return function(parser)
 	local go = parser.go
 
+	-- error reporting
+	local exprerr, expect = parser.exprerr, parser.expect
+
 	-- basic precedence levels
 	local p = parser.precedence
-	local prec_below, prec_above = parser.prec_below, parser.prec_above
+	local prec_above = parser.prec_above
 
 	prec_above(p.primary, "power")
 	prec_above(p.power, "unary")
@@ -39,20 +42,22 @@ return function(parser)
 	pre["("] = function()
 		go(1)
 		local e = parser.expr()
-		assert(parser.tokens[go(1)][2] == ")")
+		expect(parser.tokens[go(1)], ")", ")") --((
 		return e
 	end
 
 	local function block(tok)
-		if tok then go(1) end
+		if tok then
+			go(1)
+		end
 
 		local tbl = { [0] = tok, "block" }
-		local semiend = true
+		local semiend
 
 		while true do
 			local tok2 = parser.tokens[go()]
 			while tok2[2] == ";" do
-				semiend = true
+				semiend = tok2
 				tok2 = parser.tokens[go(1)+1]
 			end
 			if tok2[2] == "}" or (not tok and not tok2[2]) then --{
@@ -65,8 +70,8 @@ return function(parser)
 			tbl[#tbl+1] = e
 		end
 
-		if semiend then
-			tbl[#tbl+1] = { "nil" }
+		if semiend ~= false then
+			tbl[#tbl+1] = { [0] = semiend or parser.tokens[go()-1], "nil" }
 		end
 
 		return tbl
@@ -88,7 +93,7 @@ return function(parser)
 				params[#params+1] = tok[3]
 				tok = parser.tokens[go(1)]
 			end
-			assert(tok[2] == "->")
+			expect(tok, "->", "-> after function arguments")
 			tok = parser.tokens[go()]
 		end
 
@@ -110,7 +115,7 @@ return function(parser)
 		}
 	end
 
-	local function rightrec(t, prec)
+	--[[local function rightrec(t, prec)
 		return {
 			prec = prec,
 			func = function(tok, left)
@@ -118,13 +123,14 @@ return function(parser)
 				return { [0] = tok, t, left, right }
 			end
 		}
-	end
+	end]]
 
 	post["["] = { --]
 		prec = p.primary,
 		func = function(tok, left)
 			local e = parser.expr()
-			assert(parser.tokens[go(1)][2] == "]") --[
+			expect(parser.tokens[go(1)], "]", "]") -- [[
+
 			return { [0] = tok, "idx", left, e }
 		end
 	}
@@ -133,7 +139,7 @@ return function(parser)
 		prec = p.primary,
 		func = function(tok, left)
 			local name = parser.tokens[go(1)]
-			assert(name[2] == "name")
+			expect(name, "name", "an identifier")
 			return { [0] = tok, "dotidx", left, { [0] = name, "name", name[3] } }
 		end
 	}
@@ -148,7 +154,9 @@ return function(parser)
 	post["="] = {
 		prec = p.assign,
 		func = function(tok, left)
-			assert(assigntargets[left[1]])
+			if not assigntargets[left[1]] then
+				exprerr(left, tok[0], "Left side of an assignment must be an identifier or field")
+			end
 
 			local right = parser.expr(prec_above(p.assign))
 			return { [0] = tok, "assign", left, right }

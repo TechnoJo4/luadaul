@@ -37,7 +37,7 @@ local base = {
 return function(tbl)
 	for k,v in pairs(base) do
 		if not tbl[k] then
-			tbl[k] = base[k]
+			tbl[k] = v
 		end
 	end
 
@@ -47,6 +47,10 @@ return function(tbl)
 	recurse = function(ir, i)
 		local c = ir[i]
 		local f = tbl[c[1]]
+
+		if tbl.all then
+			tbl.all(c, state)
+		end
 
 		if f then
 			if rawparent then
@@ -67,6 +71,10 @@ return function(tbl)
 		local c = ir
 		local f = tbl[c[1]]
 
+		if tbl.all then
+			tbl.all(c, state)
+		end
+
 		if f then
 			if rawparent then
 				local t = {"root", c}
@@ -79,6 +87,6 @@ return function(tbl)
 			end
 		end
 
-		return tbl.finalize and tbl.finalize(c) or c
+		return tbl.finalize and tbl.finalize(c, state) or c
 	end
 end

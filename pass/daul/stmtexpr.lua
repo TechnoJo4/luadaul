@@ -14,7 +14,7 @@ return require("pass.traverse") {
 	end,
 
 	finalize = function(ir)
-		assert(ir[1] == "block")
+		-- assumption: ir (root) will always be a block
 
 		-- move everything 1 to the right
 		for i=#ir,2,-1 do
@@ -37,13 +37,10 @@ return require("pass.traverse") {
 			if stmts[ir[i]] then
 				local name = gen()
 
-				local vari
 				if new then
 					local vars = new[2][2]
-					local vari = #vars+1
-					vars[vari] = name
+					vars[#vars+1] = name
 				else
-					vari = 1
 					new = { "block", { "local", { name } } }
 				end
 

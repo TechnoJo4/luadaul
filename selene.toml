@@ -1,0 +1,6 @@
+std = "lua51"
+exclude = ["deps/*", "_*"]
+
+[lints]
+mixed_table = "allow"
+

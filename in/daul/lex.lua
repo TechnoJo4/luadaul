@@ -8,24 +8,27 @@ return function(str)
 
 	local function char(c)
 		if string.sub(str, p, p) == c then
+			local _p = p
 			p = p + 1
-			return { [0] = p, p, c }
+			return { [0] = _p, _p, c }
 		end
 	end
 
 	local function oper(s)
 		local e = p + #s - 1
 		if string.sub(str, p, e) == s then
+			local _p = p
 			p = e + 1
-			return { [0] = p, e, s }
+			return { [0] = _p, e, s }
 		end
 	end
 
 	local function keyword(w)
 		local e = p + #w
 		if string.sub(str, p, e - 1) == w and not string.match(str, "^[_a-zA-Z0-9]", e) then
+			local _p = p
 			p = e
-			return { [0] = p, e - 1, w }
+			return { [0] = _p, e - 1, w }
 		end
 	end
 

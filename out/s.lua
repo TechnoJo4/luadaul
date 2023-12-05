@@ -69,7 +69,10 @@ local function irs(n)
 		end,
 	})[n[1]]
 
-	if not f then print("irs:err", n[1]) return "err" end
+	if not f then
+		print("irs:err", n[1])
+		return "err"
+	end
 
 	return f()
 end

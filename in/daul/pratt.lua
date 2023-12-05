@@ -1,7 +1,7 @@
 -- generic common base for pratt parsers
 -- currently only used by daul but could apply to others
 
-local stream = require("stream")
+local lerror = require("out.error")
 
 return function(tokens, grammar, err)
 	-- position in token stream
@@ -13,18 +13,18 @@ return function(tokens, grammar, err)
 
 	-- regenerate the numeric ordering values
 	local function prec_regen()
-		local function traverse(node, i)
+		local function traverse(node, n)
 			if node[1] then
-				i = traverse(node[1], i)
+				n = traverse(node[1], n)
 			end
 
-			node[0] = i
+			node[0] = n
 
 			if node[2] then
-				i = traverse(node[2], i+1)
+				n = traverse(node[2], n+1)
 			end
 
-			return i+1
+			return n+1
 		end
 
 		traverse(P, 0)
@@ -63,7 +63,9 @@ return function(tokens, grammar, err)
 
 	local function go(d)
 		local _i = i
-		if d then i = i + d end
+		if d then
+			i = i + d
+		end
 		return _i
 	end
 
@@ -72,7 +74,7 @@ return function(tokens, grammar, err)
 		local tok = tokens[i]
 		local rule = pre[tok[2] or "end"]
 		if not rule then
-			error("unexpected token "..tok[2])
+			err(tok[0], tok[1], nil, "Unexpected token ", tok[2])
 		end
 
 		-- parse prefix expression
@@ -106,6 +108,17 @@ return function(tokens, grammar, err)
 		return e
 	end
 
+	local function expect(tok, t, what)
+		if tok[2] ~= t then
+			err(tok[0], tok[1], nil, "Excepted ", what, ", got ", tok[2])
+		end
+	end
+
+	local function exprerr(exp, highlight, ...)
+		local range = lerror.getrange(exp)
+		err(range[0], range[1], highlight, ...)
+	end
+
 	-- give control to the specific language
 	return grammar({
 		tokens = tokens,
@@ -116,5 +129,8 @@ return function(tokens, grammar, err)
 		post = post,
 		go = go,
 		expr = expr,
+		err = err,
+		expect = expect,
+		exprerr = exprerr
 	})
 end
