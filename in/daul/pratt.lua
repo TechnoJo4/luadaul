@@ -112,6 +112,7 @@ return function(tokens, grammar, err)
 		if tok[2] ~= t then
 			err(tok[0], tok[1], nil, "Excepted ", what, ", got ", tok[2])
 		end
+		return tok
 	end
 
 	local function exprerr(exp, highlight, ...)

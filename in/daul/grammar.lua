@@ -39,10 +39,12 @@ return function(parser)
 	pre["-"] = unary("unm")
 	pre["#"] = unary("len")
 
-	pre["("] = function()
+	pre["("] = function(p0)
 		go(1)
 		local e = parser.expr()
-		expect(parser.tokens[go(1)], ")", ")") --((
+		local p1 = expect(parser.tokens[go(1)], ")", ")") --((
+		e["p0"] = e["p0"] or p0 -- save parens tokens for accurate error reporting (see: getrange)
+		e["p1"] = e["p1"] or p1
 		return e
 	end
 
@@ -70,8 +72,12 @@ return function(parser)
 			tbl[#tbl+1] = e
 		end
 
+		local lasttok = parser.tokens[go()-1]
+		if tok then -- see: parens above; getrange
+			tbl["b1"] = lasttok
+		end
 		if semiend ~= false then
-			tbl[#tbl+1] = { [0] = semiend or parser.tokens[go()-1], "nil" }
+			tbl[#tbl+1] = { [0] = semiend, "nil" }
 		end
 
 		return tbl
@@ -97,7 +103,11 @@ return function(parser)
 			tok = parser.tokens[go()]
 		end
 
-		tbl[3] = block(tok)
+		if tok[2] == "{" then -- }
+			tbl[3] = block(tok)
+		else
+			tbl[3] = { "block", parser.expr() }
+		end
 
 		return tbl
 	end
@@ -115,7 +125,7 @@ return function(parser)
 		}
 	end
 
-	--[[local function rightrec(t, prec)
+	local function rightrec(t, prec)
 		return {
 			prec = prec,
 			func = function(tok, left)
@@ -123,7 +133,7 @@ return function(parser)
 				return { [0] = tok, t, left, right }
 			end
 		}
-	end]]
+	end
 
 	post["["] = { --]
 		prec = p.primary,
@@ -144,10 +154,21 @@ return function(parser)
 		end
 	}
 
+	-- arithmetic
 	post["+"] = leftrec("add", p.add)
 	post["-"] = leftrec("sub", p.add)
 	post["*"] = leftrec("mul", p.mult)
 	post["/"] = leftrec("div", p.mult)
+	post["^"] = rightrec("pow", p.power)
+
+	post[".."] = rightrec("cat", p.concat)
+
+	post["<"] = leftrec("lt", p.comp)
+	post[">"] = leftrec("gt", p.comp)
+	post["=="] = leftrec("eq", p.comp)
+	post["!="] = leftrec("ne", p.comp)
+	post["<="] = leftrec("le", p.comp)
+	post[">="] = leftrec("ge", p.comp)
 
 	-- right-rec + check lhs
 	local assigntargets = { idx = true, dotidx = true, name = true }

@@ -3,6 +3,24 @@
 local red = "\27[31m"
 local reset = "\27[0m"
 
+local function getrange_try(ir, r, i)
+	if ir[i] then
+		local t = ir[i]
+		if not r[0] then
+			r[0] = t[0]
+			r[1] = t[1]
+			return
+		end
+
+		if t[0] < r[0] then
+			r[0] = t[0]
+		end
+		if t[1] > r[1] then
+			r[1] = t[1]
+		end
+	end
+end
+
 return {
 	getrange = require("pass.traverse") {
 		call_with_raw_parent = true,
@@ -12,21 +30,10 @@ return {
 		end,
 
 		all = function(ir, r)
-			if ir[0] then
-				local t = ir[0]
-				if not r[0] then
-					r[0] = t[0]
-					r[1] = t[1]
-					return
-				end
-
-				if t[0] < r[0] then
-					r[0] = t[0]
-				end
-				if t[1] > r[1] then
-					r[1] = t[1]
-				end
-			end
+			getrange_try(ir, r, 0)
+			getrange_try(ir, r, "p0")
+			getrange_try(ir, r, "p1")
+			getrange_try(ir, r, "b1")
 		end,
 
 		finalize = function(_, r)
