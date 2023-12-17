@@ -26,7 +26,8 @@ local literal = {
 }
 
 local binops = {
-	["add"] = "+", ["sub"] = "-", ["mul"] = "*", ["div"] = "/"
+	["add"] = "+", ["sub"] = "-", ["mul"] = "*", ["div"] = "/", ["cat"] = "..",
+	["lt"] = "<", ["gt"] = ">", ["le"] = "<=", ["ge"] = ">=", ["eq"] = "==", ["ne"] = "!="
 }
 
 local function r(t, i, n)
@@ -168,6 +169,16 @@ local function r(t, i, n)
 		-- see comment on loop
 		t[i+1] = "end)"
 		return i + 2
+	end
+
+	if nt == "while" then
+		t[i] = "while"
+		i = r(t, i+1, n[2])
+		t[i] = "do "
+		i = r(t, i+1, n[3])
+		t[i] = ";end"
+
+		return i+1
 	end
 
 	error("lua output: bad ir ("..nt..")")

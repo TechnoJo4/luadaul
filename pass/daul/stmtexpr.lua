@@ -9,7 +9,7 @@ return require("pass.traverse") {
 		local counter = -1
 		return function()
 			counter = counter + 1
-			return "S"..string.format("%X",counter)
+			return "_"..string.format("%X",counter)
 		end
 	end,
 
@@ -142,5 +142,19 @@ return require("pass.traverse") {
 				ir[i] = { "call", { "name", "_" }, ir[i] }
 			end
 		end
+	end,
+
+	["while"] = function(ir, recurse, edit, gen)
+		recurse(ir, 2)
+		recurse(ir, 3)
+
+		-- see comment in @block: we can now assume the last value of the body
+		-- is an expression (and so valid as an assign's rhs)
+		local name = gen()
+		local body = ir[3]
+		body[#body] = { "assign", { "name", name }, body[#body] }
+		body[#body+1] = { "name", name }
+
+		edit{ "block", { "local", { name } }, ir, { "name", name } }
 	end
 }

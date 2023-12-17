@@ -29,6 +29,11 @@ return function(parser)
 	pre["int"] = literal
 	pre["name"] = literal
 
+	pre["_G"] = function(tok)
+		go(1)
+		return { [0] = tok, "name", "_G" }
+	end
+
 	local function unary(t)
 		return function(tok)
 			go(1)
@@ -38,6 +43,7 @@ return function(parser)
 	end
 	pre["-"] = unary("unm")
 	pre["#"] = unary("len")
+	pre["not"] = unary("not")
 
 	pre["("] = function(p0)
 		go(1)
@@ -48,6 +54,82 @@ return function(parser)
 		return e
 	end
 
+	-- infix
+	local post = parser.post
+
+	local function leftrec(t, prec)
+		return {
+			prec = prec,
+			func = function(tok, left)
+				local right = parser.expr(prec)
+				return { [0] = tok, t, left, right }
+			end
+		}
+	end
+
+	local function rightrec(t, prec)
+		return {
+			prec = prec,
+			func = function(tok, left)
+				local right = parser.expr(prec_above(prec))
+				return { [0] = tok, t, left, right }
+			end
+		}
+	end
+
+	post["["] = { --]
+		prec = p.primary,
+		func = function(tok, left)
+			local e = parser.expr()
+			expect(parser.tokens[go(1)], "]", "]") -- [[
+
+			return { [0] = tok, "idx", left, e }
+		end
+	}
+
+	post["."] = {
+		prec = p.primary,
+		func = function(tok, left)
+			local name = parser.tokens[go(1)]
+			expect(name, "name", "an identifier")
+			return { [0] = tok, "dotidx", left, { [0] = name, "name", name[3] } }
+		end
+	}
+
+	-- arithmetic
+	post["+"] = leftrec("add", p.add)
+	post["-"] = leftrec("sub", p.add)
+	post["*"] = leftrec("mul", p.mult)
+	post["/"] = leftrec("div", p.mult)
+	post["^"] = rightrec("pow", p.power)
+
+	post[".."] = rightrec("cat", p.concat)
+
+	post["<"] = leftrec("lt", p.comp)
+	post[">"] = leftrec("gt", p.comp)
+	post["<="] = leftrec("le", p.comp)
+	post[">="] = leftrec("ge", p.comp)
+	post["=="] = leftrec("eq", p.comp)
+	post["!="] = leftrec("ne", p.comp)
+
+	post["or"] = leftrec("or", p.or_)
+	post["and"] = leftrec("and", p.and_)
+
+	-- right-rec + check lhs
+	local assigntargets = { idx = true, dotidx = true, name = true }
+	post["="] = {
+		prec = p.assign,
+		func = function(tok, left)
+			if not assigntargets[left[1]] then
+				exprerr(left, tok[0], "Left side of an assignment must be an identifier or field")
+			end
+
+			local right = parser.expr(prec_above(p.assign))
+			return { [0] = tok, "assign", left, right }
+		end
+	}
+
+	-- block expressions & statements
 	local function block(tok)
 		if tok then
 			go(1)
@@ -112,77 +194,29 @@ return function(parser)
 		return tbl
 	end
 
-	-- infix
-	local post = parser.post
+	pre["while"] = function(tok)
+		go(1)
+		local params = {}
+		local tbl = { [0] = tok, "while" }
 
-	local function leftrec(t, prec)
-		return {
-			prec = prec,
-			func = function(tok, left)
-				local right = parser.expr(prec)
-				return { [0] = tok, t, left, right }
-			end
-		}
+		tok = parser.tokens[go(1)]
+		expect(tok, "(", "(") -- ))
+
+		tbl[2] = parser.expr() -- cond
+
+		tok = parser.tokens[go(1)]
+		expect(tok, ")", ")") -- ((
+
+		tok = parser.tokens[go()]
+		if tok[2] == "{" then -- }
+			tbl[3] = block(tok)
+		else
+			tbl[3] = { "block", parser.expr() }
+		end
+
+		return tbl
 	end
 
-	local function rightrec(t, prec)
-		return {
-			prec = prec,
-			func = function(tok, left)
-				local right = parser.expr(prec_above(prec))
-				return { [0] = tok, t, left, right }
-			end
-		}
-	end
-
-	post["["] = { --]
-		prec = p.primary,
-		func = function(tok, left)
-			local e = parser.expr()
-			expect(parser.tokens[go(1)], "]", "]") -- [[
-
-			return { [0] = tok, "idx", left, e }
-		end
-	}
-
-	post["."] = {
-		prec = p.primary,
-		func = function(tok, left)
-			local name = parser.tokens[go(1)]
-			expect(name, "name", "an identifier")
-			return { [0] = tok, "dotidx", left, { [0] = name, "name", name[3] } }
-		end
-	}
-
-	-- arithmetic
-	post["+"] = leftrec("add", p.add)
-	post["-"] = leftrec("sub", p.add)
-	post["*"] = leftrec("mul", p.mult)
-	post["/"] = leftrec("div", p.mult)
-	post["^"] = rightrec("pow", p.power)
-
-	post[".."] = rightrec("cat", p.concat)
-
-	post["<"] = leftrec("lt", p.comp)
-	post[">"] = leftrec("gt", p.comp)
-	post["=="] = leftrec("eq", p.comp)
-	post["!="] = leftrec("ne", p.comp)
-	post["<="] = leftrec("le", p.comp)
-	post[">="] = leftrec("ge", p.comp)
-
-	-- right-rec + check lhs
-	local assigntargets = { idx = true, dotidx = true, name = true }
-	post["="] = {
-		prec = p.assign,
-		func = function(tok, left)
-			if not assigntargets[left[1]] then
-				exprerr(left, tok[0], "Left side of an assignment must be an identifier or field")
-			end
-
-			local right = parser.expr(prec_above(p.assign))
-			return { [0] = tok, "assign", left, right }
-		end
-	}
 
 	return block()
 end

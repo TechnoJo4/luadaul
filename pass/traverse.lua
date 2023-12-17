@@ -25,12 +25,15 @@ local function all3(ir, recurse)
 end
 
 local base = {
-	unm = unop, len = unop,
-	add = binop, sub = binop, mul = binop, div = binop,
+	unm = unop, len = unop, ["not"] = unop,
+	add = binop, sub = binop, mul = binop, div = binop, pow = binop,
+	lt = binop, gt = binop, le = binop, ge = binop, eq = binop, neq = binop,
+	cat = binop, ["or"] = binop, ["and"] = binop,
 	assign = binop,
 	block = all,
 	["local"] = all3,
 	["function"] = fun, call = all,
+	["while"] = binop,
 }
 
 -- create traverse function from table {[IR type]: func}

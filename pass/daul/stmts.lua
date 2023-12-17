@@ -5,4 +5,5 @@ return {
 	["call"] = true,
 	["block"] = true,
 	["local"] = true,
+	["while"] = true
 }

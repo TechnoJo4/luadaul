@@ -12,11 +12,13 @@ local function irs(n)
 		int = function() return "i:"..n[2] end,
 		name = function() return "`"..n[2] end,
 		unm = function() return "-(" .. irs(n[2]) .. ")" end,
-		add = bin,
-		sub = bin,
-		mul = bin,
-		div = bin,
+		add = bin, sub = bin, mul = bin, div = bin, pow = bin,
+		lt = bin, gt = bin, le = bin, ge = bin, eq = bin, neq = bin,
+		cat = bin, ["or"] = bin, ["and"] = bin,
 		assign = bin,
+		["while"] = function()
+			return "while " .. irs(n[2]) .. " ".. irs(n[3])
+		end,
 		["local"] = function()
 			local s = "(local "
 
