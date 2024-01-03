@@ -19,6 +19,10 @@ allowed IR elements:
 	function: (function (...params)? body) where body is a block
 
 	return: (return ...exprs)
+
+	table: (table ...items) where item can be
+		(tableindex key value)
+		value
 ]]
 
 local literal = {
@@ -27,7 +31,8 @@ local literal = {
 
 local binops = {
 	["add"] = "+", ["sub"] = "-", ["mul"] = "*", ["div"] = "/", ["cat"] = "..",
-	["lt"] = "<", ["gt"] = ">", ["le"] = "<=", ["ge"] = ">=", ["eq"] = "==", ["ne"] = "!="
+	["lt"] = "<", ["gt"] = ">", ["le"] = "<=", ["ge"] = ">=", ["eq"] = "==", ["ne"] = "!=",
+	["or"] = " or ", ["and"] = " and "
 }
 
 local function r(t, i, n)
@@ -68,6 +73,14 @@ local function r(t, i, n)
 		i = r(t, i+1, n[2])
 		t[i] = tmp
 		i = r(t, i+1, n[3])
+		t[i] = ")"
+
+		return i + 1
+	end
+
+	if nt == "len" then
+		t[i] = "#("
+		i = r(t, i+1, n[2])
 		t[i] = ")"
 
 		return i + 1
@@ -116,7 +129,7 @@ local function r(t, i, n)
 		t[i+1] = table.concat(n[2], ",")
 		i = i + 2
 
-		if n[3] then
+		if n[3] and #n[3] ~= 0 then
 			t[i] = "="
 			for j=3,#n-1 do
 				-- on the first iteration, +1 from the equal
@@ -166,7 +179,7 @@ local function r(t, i, n)
 			t[i] = ";"
 		end
 
-		-- see comment on loop
+		-- see comment in loop
 		t[i+1] = "end)"
 		return i + 2
 	end
@@ -174,11 +187,52 @@ local function r(t, i, n)
 	if nt == "while" then
 		t[i] = "while"
 		i = r(t, i+1, n[2])
-		t[i] = "do "
+		t[i] = " do "
 		i = r(t, i+1, n[3])
 		t[i] = ";end"
 
 		return i+1
+	end
+
+	if nt == "forin" then
+		t[i] = "for"
+
+		for j=1,#n[2] do
+			t[i] = n[2][j]
+			t[i+1] = ","
+			i = i + 2
+		end
+		t[i-1] = "in" -- overrides last comma
+		i = r(t, i, n[3])
+		t[i] = " do "
+		i = r(t, i+1, n[4])
+		t[i] = ";end"
+
+		return i+1
+	end
+
+	if nt == "table" then
+		t[i] = "{"
+		if n[2] then
+			for j=2,#n do
+				i = r(t, i+1, n[j])
+				t[i] = ","
+			end
+			t[i] = "}"
+		else
+			t[i] = "{}"
+		end
+
+		return i+1
+	end
+
+	if nt == "tableindex" then
+		t[i] = "["
+		i = r(t, i+1, n[2])
+		t[i] = "]="
+		i = r(t, i+1, n[3])
+
+		return i
 	end
 
 	error("lua output: bad ir ("..nt..")")

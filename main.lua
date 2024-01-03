@@ -1,28 +1,37 @@
-local f = io.open("test.daul", "r")
+-- minimal main.lua for bootstrapping purposes
+-- assumes last two arguments are source and target, ignores everything else
+
+local argv = arg or {...}
+local l = #argv
+local fin = argv[l-1]
+local fout = argv[l]
+
+if not fin or not fout then
+	print("no filename")
+	return
+else
+	print(string.format("bootstrap: %s -> %s", fin, fout))
+end
+
+-- read file
+local f = io.open(fin, "r")
 local s = f:read("*a")
 f:close()
 
-print(s)
-
+-- load daul
 local outs = require("out.s")
 local daul = require("in.daul")
-local e = daul(s)
-print(outs(e))
-
+local err = require("out.error")
 local pass = require("pass.daul")
-e = pass(e)
-print(outs(e))
-
-print()
-
 local lua = require("out.lua")
-s = lua(e)
-print(s)
 
-f = io.open("_test.lua", "w")
+-- compile
+local reporter = err.reporter(s)
+local e = daul(s, reporter)
+e = pass(e)
+s = lua(e)
+
+-- write lua result
+f = io.open(fout, "w")
 f:write(s)
 f:close()
-
-print()
-print('require("_test")...')
-print(require("_test"))

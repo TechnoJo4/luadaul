@@ -1,5 +1,5 @@
 std = "lua51"
-exclude = ["deps/*", "_*"]
+exclude = ["deps/*", "build/*", "_*"]
 
 [lints]
 mixed_table = "allow"

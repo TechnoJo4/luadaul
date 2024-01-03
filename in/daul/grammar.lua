@@ -27,6 +27,7 @@ return function(parser)
 		return { [0] = tok, tok[2], tok[3] }
 	end
 	pre["int"] = literal
+	pre["str"] = literal
 	pre["name"] = literal
 
 	pre["_G"] = function(tok)
@@ -45,13 +46,40 @@ return function(parser)
 	pre["#"] = unary("len")
 	pre["not"] = unary("not")
 
-	pre["("] = function(p0)
+	pre["("] = function(p0) -- )
 		go(1)
 		local e = parser.expr()
 		local p1 = expect(parser.tokens[go(1)], ")", ")") --((
 		e["p0"] = e["p0"] or p0 -- save parens tokens for accurate error reporting (see: getrange)
 		e["p1"] = e["p1"] or p1
 		return e
+	end
+
+	pre["["] = function(tok) -- ]
+		go(1)
+
+		local tbl = { [0] = tok, "table" }
+		if parser.tokens[go()][2] == "]" then -- [
+			go(1)
+			return tbl
+		end
+
+		local after
+		repeat
+			local e = parser.expr()
+			after = parser.tokens[go(1)]
+
+			if after[2] == ":" then
+				e = { [0] = after, "tableindex", e, parser.expr() }
+				after = parser.tokens[go(1)]
+			end
+
+			tbl[#tbl+1] = e
+		until after[2] ~= ","
+		expect(after, "]", "']' or ',' after table item") -- [[
+		tbl["b1"] = after
+
+		return tbl
 	end
 
 	-- infix
@@ -84,6 +112,26 @@ return function(parser)
 			expect(parser.tokens[go(1)], "]", "]") -- [[
 
 			return { [0] = tok, "idx", left, e }
+		end
+	}
+
+	post["("] = { --)
+		prec = p.primary,
+		func = function(tok, left)
+			local tbl = { [0] = tok, "call", left }
+			local after
+
+			if parser.tokens[go()][2] == ")" then -- (
+				return tbl
+			end
+
+			repeat
+				tbl[#tbl+1] = parser.expr()
+				after = parser.tokens[go(1)]
+			until after[2] ~= ","
+			expect(after, ")", "')' or ',' after function call argument") -- ((
+
+			return tbl
 		end
 	}
 
@@ -149,9 +197,30 @@ return function(parser)
 				break
 			end
 
-			semiend = false
-			local e = parser.expr()
-			tbl[#tbl+1] = e
+			-- the only real statement in all of daul, so i feel it's
+			-- acceptable to just use an if statement here instead of a whole
+			-- table of statements or whatever
+			if tok2[2] == "var" or tok2[2] == "val" then
+				go(1)
+
+				local name = expect(parser.tokens[go(1)], "name", "an identifier")
+
+				-- TODO: declaration without value
+				expect(parser.tokens[go(1)], "=", "=")
+
+				local right = parser.expr(prec_above(p.assign))
+
+				semiend = false
+				local e = { [0] = tok2, "local", { name[3] }, right }
+				if tok2[2] == "val" then
+					e = { [0] = tok2, "const", e }
+				end
+				tbl[#tbl+1] = e
+			else
+				semiend = false
+				local e = parser.expr()
+				tbl[#tbl+1] = e
+			end
 		end
 
 		local lasttok = parser.tokens[go()-1]
@@ -172,8 +241,9 @@ return function(parser)
 		local params = {}
 		local tbl = { [0] = tok, "function", params }
 
-		tok = parser.tokens[go(1)]
+		tok = parser.tokens[go()]
 		if tok[2] == "name" then -- parse argument names
+			go(1)
 			params[1] = tok[3]
 			tok = parser.tokens[go(1)]
 			while tok[2] == "," do
@@ -186,6 +256,7 @@ return function(parser)
 		end
 
 		if tok[2] == "{" then -- }
+			go(1)
 			tbl[3] = block(tok)
 		else
 			tbl[3] = { "block", parser.expr() }
@@ -196,7 +267,6 @@ return function(parser)
 
 	pre["while"] = function(tok)
 		go(1)
-		local params = {}
 		local tbl = { [0] = tok, "while" }
 
 		tok = parser.tokens[go(1)]
@@ -217,6 +287,50 @@ return function(parser)
 		return tbl
 	end
 
+	pre["for"] = function(tok)
+		go(1)
+
+		local names = {}
+		local tbl = { [0] = tok, nil, names }
+		expect(parser.tokens[go(1)], "(", "(") -- ))
+
+		repeat
+			names[#names+1] = expect(parser.tokens[go(1)], "name", "an identifier")
+			after = parser.tokens[go(1)]
+		until after[2] ~= ","
+
+		local bodyidx = 4
+		if after[2] == ":" then -- for-in
+			tbl[1] = "forin"
+			tbl[3] = parser.expr()
+		else
+			expect(after, "=", "':' or '='")
+			tbl[1] = "for"
+			bodyidx = 6
+
+			tbl[3] = parser.expr()
+			expect(parser.tokens[go(1)], ",", ",")
+			tbl[4] = parser.expr()
+			if parser.tokens[go()][2] == "," then
+				go(1)
+				tbl[5] = parser.expr()
+			end
+
+			-- TODO: multiple names -> nested loops
+			tbl[2] = names[1]
+		end
+
+		expect(parser.tokens[go(1)], ")", ")") -- ((
+
+		tok = parser.tokens[go()]
+		if tok[2] == "{" then -- }
+			tbl[bodyidx] = block(tok)
+		else
+			tbl[bodyidx] = { "block", parser.expr() }
+		end
+
+		return tbl
+	end
 
 	return block()
 end

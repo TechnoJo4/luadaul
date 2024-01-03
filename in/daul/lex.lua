@@ -1,8 +1,8 @@
-local stream = require("stream")
+local stream = require("common.stream")
 
 -- tokens are { [0] = start, [1] = end, [2] = type, [3] = value? }
 
-return function(str)
+return function(str, err)
 	local p = 1
 	local eos = 1 + #str
 
@@ -46,6 +46,10 @@ return function(str)
 
 	return stream.new(function()
 		p = string.match(str, "^[ \t\r\n]*()", p) -- skip whitespace
+		repeat
+			local cp = string.match(str, "^//.-\n[ \t\r\n]*()", p) -- skip potential comment + whitespace
+			p = cp or p
+		until not cp
 		if p >= eos then return stream.END end
 
 		return char("(") or char(")") -- braces
@@ -59,16 +63,25 @@ return function(str)
 			or char("<") or char(">")
 			or char("+") or char("-")
 			or char("*") or char("/")
-			or char("^")
-			or char(";") or char(",")
+			or char("^") or char("#")
+			or char(";") or char(",") or char(":")
 			or keyword("and") or keyword("or")
 			or keyword("var") or keyword("val")
 			or keyword("def")
-			or keyword("while")
+			or keyword("while") or keyword("for")
 			or keyword("_G")
 			or pattern("name", "^([a-zA-Z][_a-zA-Z0-9]*)()")
 			or pattern("int", "^([0-9]+)()")
-			or pattern("str", "^\"()")
-			or error("no such token ("..string.sub(str, p, p)..")")
+			or pattern("str", "^\"()", function(s, np)
+					repeat
+						np = string.match(s, "\"()", np)
+					until string.sub(s, np-1, np-1) ~= "\\" or not np
+
+					if not np then
+					end
+
+					return string.sub(s, p, np-1), np
+				end)
+			or err(p, p, nil, "No such token")
 	end)
 end

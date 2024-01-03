@@ -34,6 +34,7 @@ local base = {
 	["local"] = all3,
 	["function"] = fun, call = all,
 	["while"] = binop,
+	["dotidx"] = unop
 }
 
 -- create traverse function from table {[IR type]: func}

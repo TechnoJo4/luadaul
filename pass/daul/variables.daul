@@ -1,0 +1,39 @@
+// check variables: error if they do not exist or if they are declared as val
+
+val err = require("out.error")
+val traverse = require("pass.traverse")
+
+\reporter -> traverse([
+	"init": \[
+		"reporter": reporter,
+		"scopes": []
+	],
+
+	"block": \ir, recurse, edit, state -> {
+		scopes[#scopes+1] = []
+		for (i=2,#ir) recurse(ir, i)
+		scopes[#scopes] = nil;
+	},
+
+	"const": \ir, recurse, edit, state -> {
+		recurse(ir, 2)
+		scopes[ir[2][2][1]] = "const"
+		edit(ir[2]);
+	},
+
+	"local": \ir, recurse, edit, state -> {
+		scopes[ir[2][1]] = true
+		for (i=3,#ir) recurse(ir, i)
+	},
+
+	"name": \ir, recurse, edit, state -> {
+	},
+
+	"assign": \ir, recurse, edit, state -> {
+		recurse(ir, 2)
+		recurse(ir, 3)
+
+		if (ir[2][1] == "name") {
+		};
+	}
+])

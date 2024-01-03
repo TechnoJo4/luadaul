@@ -43,7 +43,7 @@ return {
 
 	reporter = function(str)
 		local nls = {1} -- positions of new lines
-		for p in string.gmatch(str, "()\n") do
+		for p in string.gmatch(str, "\n()") do
 			nls[#nls+1] = p
 		end
 		if nls[#nls] ~= #str then
@@ -67,8 +67,8 @@ return {
 				line = string.sub(str, lstart, first - 1)
 			end
 			line = line .. red .. string.sub(str, first, last) .. reset
-			if last < nls[i+1]-1 then
-				line = line .. string.sub(str, last + 1, nls[i+1]-1)
+			if last < nls[i+1]-2 then
+				line = line .. string.sub(str, last + 1, nls[i+1]-2)
 			end
 
 			local num = tostring(i)
