@@ -73,6 +73,7 @@ return {
 
 			local num = tostring(i)
 			num = string.rep(" ", numpad - #num) .. num .. " | "
+			print()
 			print(num .. line)
 			print(string.rep(" ", offset + first - lstart) .. string.rep("~", last - first + 1))
 			print(table.concat({...}))

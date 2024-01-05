@@ -3,30 +3,54 @@
 val err = require("out.error")
 val traverse = require("pass.traverse")
 
-\reporter -> traverse([
+val find = \scopes, name -> {
+	for (i=#scopes,1,-1)
+		if (scopes[i][name])
+			return scopes[i][name]
+
+	false
+};
+
+\ir, reporter -> traverse([
 	"init": \[
 		"reporter": reporter,
-		"scopes": []
+		"scopes": [[]]
 	],
 
+	"function": \ir, recurse, edit, state -> {
+		val scope = []
+		state.scopes[#state.scopes+1] = scope;
+		for (k,v : pairs(ir[2]))
+			scope[v] = true;
+
+		recurse(ir, 3);
+
+		state.scopes[#state.scopes] = nil;
+	},
+
 	"block": \ir, recurse, edit, state -> {
-		scopes[#scopes+1] = []
-		for (i=2,#ir) recurse(ir, i)
-		scopes[#scopes] = nil;
+		state.scopes[#state.scopes+1] = [];
+		for (i=2,#ir) recurse(ir, i);
+		state.scopes[#state.scopes] = nil;
 	},
 
 	"const": \ir, recurse, edit, state -> {
 		recurse(ir, 2)
-		scopes[ir[2][2][1]] = "const"
+		state.scopes[#state.scopes][ir[2][2][1]] = "const"
 		edit(ir[2]);
 	},
 
 	"local": \ir, recurse, edit, state -> {
-		scopes[ir[2][1]] = true
-		for (i=3,#ir) recurse(ir, i)
+		for (i=3,#ir) recurse(ir, i);
+		state.scopes[#state.scopes][ir[2][1]] = true
 	},
 
 	"name": \ir, recurse, edit, state -> {
+		if (ir[2] != "_G") {
+			val name = ir[2]
+			if (!find(state.scopes, name))
+				state.reporter(ir[0][0], ir[0][1], nil, "Variable '", name, "' does not exist")
+		};
 	},
 
 	"assign": \ir, recurse, edit, state -> {
@@ -34,6 +58,16 @@ val traverse = require("pass.traverse")
 		recurse(ir, 3)
 
 		if (ir[2][1] == "name") {
+			val tok = ir[2][0]
+			val name = ir[2][2]
+			val v = find(state.scopes, name)
+
+			// TODO: highlight assignment
+			if (!v)
+				state.reporter(tok[0], tok[1], nil, "Variable '", name, "' does not exist")
+
+			if (v == "const") 
+				state.reporter(tok[0], tok[1], nil, "Variable '", name, "' was declared as constant (val)")
 		};
 	}
-])
+])(ir)

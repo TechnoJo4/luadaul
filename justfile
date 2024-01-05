@@ -4,7 +4,11 @@ cflags := "-Wall -O3"
 winlibs := "/DEFAULTLIB:libcmt.lib /DEFAULTLIB:libvcruntime.lib /DEFAULTLIB:libucrt.lib"
 objfiles := "build/vm/vm.o build/vm/main.o"
 
+all: build test
+
 build: builddir (d "pass/daul/variables") (d "pass/daul")
+
+test: (d "test") (testd "pass/daul" "build/pass/daul")
 
 vm: (c "vm/main")
 	lld-link /OUT:build/vm.exe /SUBSYSTEM:CONSOLE {{objfiles}} {{winlibs}}
@@ -14,6 +18,9 @@ c file:
 
 d file:
 	cd build; luajit ./main.lua ../{{file}}.daul {{file}}.lua
+
+testd in out:
+	cd build; luajit ./test.lua ../{{in}}.daul ../{{out}}.lua
 
 [windows]
 builddir:

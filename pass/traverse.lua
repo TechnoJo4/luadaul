@@ -24,17 +24,26 @@ local function all3(ir, recurse)
 	end
 end
 
+local function fori(ir, recurse)
+	recurse(ir, 3)
+	recurse(ir, 4)
+	if ir[5] then
+		recurse(ir, 5)
+	end
+	recurse(ir, 6)
+end
+
 local base = {
 	unm = unop, len = unop, ["not"] = unop,
+	["or"] = binop, ["and"] = binop, cat = binop,
 	add = binop, sub = binop, mul = binop, div = binop, pow = binop,
-	lt = binop, gt = binop, le = binop, ge = binop, eq = binop, neq = binop,
-	cat = binop, ["or"] = binop, ["and"] = binop,
+	lt = binop, gt = binop, le = binop, ge = binop, eq = binop, ne = binop,
 	assign = binop,
-	block = all,
-	["local"] = all3,
-	["function"] = fun, call = all,
-	["while"] = binop,
-	["dotidx"] = unop
+	block = all, ["function"] = fun, call = all,
+	["local"] = all3, ["const"] = unop,
+	["while"] = binop, ["for"] = fori, ["forin"] = binop,
+	["idx"] = binop, ["dotidx"] = unop,
+	["table"] = all, ["tableindex"] = binop
 }
 
 -- create traverse function from table {[IR type]: func}
@@ -50,6 +59,7 @@ return function(tbl)
 	local recurse, state
 	recurse = function(ir, i)
 		local c = ir[i]
+		if not c then error("attempt to recurse into nonexistent node") end
 		local f = tbl[c[1]]
 
 		if tbl.all then

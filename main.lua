@@ -28,7 +28,7 @@ local lua = require("out.lua")
 -- compile
 local reporter = err.reporter(s)
 local e = daul(s, reporter)
-e = pass(e)
+e = pass(e, reporter)
 s = lua(e)
 
 -- write lua result

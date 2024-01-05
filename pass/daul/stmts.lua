@@ -4,6 +4,10 @@ return {
 	["return"] = true,
 	["call"] = true,
 	["block"] = true,
+	["const"] = true,
 	["local"] = true,
-	["while"] = true
+	["if"] = true,
+	["while"] = true,
+	["for"] = true,
+	["forin"] = true
 }

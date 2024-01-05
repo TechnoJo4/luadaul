@@ -5,7 +5,10 @@
 local stmts = require("pass.daul.stmts")
 local returnlast = { ["root"] = true, ["function"] = true }
 local notransform = {
-	["while"] = function(pi) return pi ~= 2 end
+	["while"] = function(pi) return pi ~= 2 end,
+	["for"] = function(pi) return pi == 6 end,
+	["forin"] = function(pi) return pi == 4 end,
+	["if"] = function(pi) return pi ~= 2 end
 }
 
 return require("pass.traverse") {

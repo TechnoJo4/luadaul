@@ -44,7 +44,13 @@ return function(parser)
 	end
 	pre["-"] = unary("unm")
 	pre["#"] = unary("len")
-	pre["not"] = unary("not")
+	pre["!"] = unary("not")
+
+	pre["return"] = function(tok)
+		go(1)
+		local right = parser.expr()
+		return { [0] = tok, "return", right }
+	end
 
 	pre["("] = function(p0) -- )
 		go(1)
@@ -122,6 +128,7 @@ return function(parser)
 			local after
 
 			if parser.tokens[go()][2] == ")" then -- (
+				go(1)
 				return tbl
 			end
 
@@ -141,6 +148,31 @@ return function(parser)
 			local name = parser.tokens[go(1)]
 			expect(name, "name", "an identifier")
 			return { [0] = tok, "dotidx", left, { [0] = name, "name", name[3] } }
+		end
+	}
+
+	post["->"] = {
+		prec = p.primary,
+		func = function(tok, left)
+			local name = parser.tokens[go(1)]
+			expect(name, "name", "an identifier")
+			expect(parser.tokens[go(1)], "(", "'(' for method call") -- ))
+
+			local tbl = { [0] = tok, "selfcall", left, name[3] }
+			local after
+
+			if parser.tokens[go()][2] == ")" then -- (
+				go(1)
+				return tbl
+			end
+
+			repeat
+				tbl[#tbl+1] = parser.expr()
+				after = parser.tokens[go(1)]
+			until after[2] ~= ","
+			expect(after, ")", "')' or ',' after function call argument") -- ((
+
+			return tbl
 		end
 	}
 
@@ -256,7 +288,6 @@ return function(parser)
 		end
 
 		if tok[2] == "{" then -- }
-			go(1)
 			tbl[3] = block(tok)
 		else
 			tbl[3] = { "block", parser.expr() }
@@ -282,6 +313,37 @@ return function(parser)
 			tbl[3] = block(tok)
 		else
 			tbl[3] = { "block", parser.expr() }
+		end
+
+		return tbl
+	end
+
+	pre["if"] = function(tok)
+		go(1)
+		local tbl = { [0] = tok, "if" }
+
+		tok = parser.tokens[go(1)]
+		expect(tok, "(", "(") -- ))
+
+		tbl[2] = parser.expr() -- cond
+
+		tok = parser.tokens[go(1)]
+		expect(tok, ")", ")") -- ((
+
+		tok = parser.tokens[go()]
+		if tok[2] == "{" then -- }
+			tbl[3] = block(tok)
+		else
+			tbl[3] = { "block", parser.expr() }
+		end
+
+		if parser.tokens[go()][2] == "else" then
+			tok = parser.tokens[go(1)+1]
+			if tok[2] == "{" then -- }
+				tbl[4] = block(tok)
+			else
+				tbl[4] = { "block", parser.expr() }
+			end
 		end
 
 		return tbl

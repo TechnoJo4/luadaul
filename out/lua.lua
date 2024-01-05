@@ -31,7 +31,7 @@ local literal = {
 
 local binops = {
 	["add"] = "+", ["sub"] = "-", ["mul"] = "*", ["div"] = "/", ["cat"] = "..",
-	["lt"] = "<", ["gt"] = ">", ["le"] = "<=", ["ge"] = ">=", ["eq"] = "==", ["ne"] = "!=",
+	["lt"] = "<", ["gt"] = ">", ["le"] = "<=", ["ge"] = ">=", ["eq"] = "==", ["ne"] = "~=",
 	["or"] = " or ", ["and"] = " and "
 }
 
@@ -67,6 +67,16 @@ local function r(t, i, n)
 		return i + 2
 	end
 
+	if nt == "idx" then
+		t[i] = "(" -- )
+		i = r(t, i+1, n[2])
+		t[i] = ")[" -- ](
+		i = r(t, i+1, n[3])
+		t[i] = "]" -- [
+
+		return i + 1
+	end
+
 	tmp = binops[nt]
 	if tmp then
 		t[i] = "("
@@ -86,12 +96,52 @@ local function r(t, i, n)
 		return i + 1
 	end
 
+	if nt == "unm" then
+		t[i] = "-("
+		i = r(t, i+1, n[2])
+		t[i] = ")"
+
+		return i + 1
+	end
+
+	if nt == "not" then
+		t[i] = "not("
+		i = r(t, i+1, n[2])
+		t[i] = ")"
+
+		return i + 1
+	end
+
 	if nt == "call" then
 		i = r(t, i, n[2])
 		t[i] = "("
 
 		if n[3] then
 			for j=3,#n do
+				-- on the first iteration, +1 from the open parens
+				-- on all others, +1 from last param's comma
+				i = r(t, i+1, n[j])
+
+				-- extraneous last comma overridden by close parens after loop
+				t[i] = ","
+			end
+		else
+			i = i + 1
+		end
+
+		t[i] = ")"
+		return i+1
+	end
+
+	if nt == "selfcall" then
+		i = r(t, i, n[2])
+		t[i] = ":"
+		t[i+1] = n[3]
+		t[i+2] = "("
+		i = i + 2
+
+		if n[4] then
+			for j=4,#n do
 				-- on the first iteration, +1 from the open parens
 				-- on all others, +1 from last param's comma
 				i = r(t, i+1, n[j])
@@ -122,6 +172,10 @@ local function r(t, i, n)
 		end
 
 		return i
+	end
+
+	if nt == "const" then
+		return r(t, i, n[2])
 	end
 
 	if nt == "local" then
@@ -159,7 +213,7 @@ local function r(t, i, n)
 		t[i] = "(function("
 		i = i + 1
 
-		if n[2] then
+		if n[2] and #n[2] ~= 0 then
 			for j=1,#n[2]-1 do
 				t[i] = n[2][j]
 				t[i+1] = ","
@@ -181,11 +235,11 @@ local function r(t, i, n)
 
 		-- see comment in loop
 		t[i+1] = "end)"
-		return i + 2
+		return i+2
 	end
 
 	if nt == "while" then
-		t[i] = "while"
+		t[i] = "while "
 		i = r(t, i+1, n[2])
 		t[i] = " do "
 		i = r(t, i+1, n[3])
@@ -194,15 +248,49 @@ local function r(t, i, n)
 		return i+1
 	end
 
+	if nt == "if" then
+		t[i] = "if "
+		i = r(t, i+1, n[2])
+		t[i] = " then "
+		i = r(t, i+1, n[3])
+		if n[4] then
+			t[i] = ";else "
+			i = r(t, i+1, n[4])
+		end
+		t[i] = ";end"
+
+		return i+1
+	end
+
+	if nt == "for" then
+		t[i] = "for "
+		t[i+1] = n[2][3]
+		t[i+2] = "="
+		i = r(t, i+3, n[3])
+		t[i] = ","
+		i = r(t, i+1, n[4])
+		if n[5] then
+			t[i] = ","
+			i = r(t, i+1, n[5])
+		end
+
+		t[i] = " do "
+		i = r(t, i+1, n[6])
+		t[i] = ";end"
+
+		return i+1
+	end
+
 	if nt == "forin" then
-		t[i] = "for"
+		t[i] = "for "
+		i = i + 1
 
 		for j=1,#n[2] do
-			t[i] = n[2][j]
+			t[i] = n[2][j][3]
 			t[i+1] = ","
 			i = i + 2
 		end
-		t[i-1] = "in" -- overrides last comma
+		t[i-1] = " in " -- overrides last comma
 		i = r(t, i, n[3])
 		t[i] = " do "
 		i = r(t, i+1, n[4])
@@ -235,7 +323,38 @@ local function r(t, i, n)
 		return i
 	end
 
-	error("lua output: bad ir ("..nt..")")
+	if type(nt) ~= "string" then
+		error("lua output: fucked ir (got "..type(nt).." type: "..tostring(nt)..")")
+	else
+		error("lua output: unknown ir type ("..nt..")")
+	end
+end
+
+if false then -- debug: check for holes before concat
+	return function(ir)
+		local tbl = {}
+		r(tbl, 1, ir)
+		
+		local i = 1
+		while true do
+			if not tbl[i] then
+				if not tbl[i+1] then
+					print(string.format("end @ %d", i))
+					break
+				end
+
+				print(string.format("hole @ %d: %s ?? %s", i, tbl[i-1], tbl[i+1]))
+			end
+
+			if type(tbl[i]) ~= "string" then
+				print(string.format("%s @ %d: %s ?? %s", type(tbl[i]), i, tbl[i-1], tbl[i+1]))
+			end
+
+			i = i + 1
+		end
+
+		return table.concat(tbl, "")
+	end
 end
 
 return function(ir)
