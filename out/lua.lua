@@ -50,6 +50,16 @@ local function r(t, i, n)
 		return i + 1
 	end
 
+	if nt == "true" then
+		t[i] = "true"
+		return i + 1
+	end
+
+	if nt == "false" then
+		t[i] = "false"
+		return i + 1
+	end
+
 	if nt == "assign" then
 		i = r(t, i, n[2])
 		t[i] = "="

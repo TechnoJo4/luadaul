@@ -8,7 +8,7 @@ all: build test
 
 build: builddir (d "pass/daul/variables") (d "pass/daul")
 
-test: (d "test") (testd "pass/daul" "build/pass/daul")
+test: (d "test") (testd "pass/daul" "build/pass/daul") (testd "pass/daul/variables" "build/pass/daul/variables")
 
 vm: (c "vm/main")
 	lld-link /OUT:build/vm.exe /SUBSYSTEM:CONSOLE {{objfiles}} {{winlibs}}

@@ -1,4 +1,3 @@
-val arg = _G.arg
 val fin = arg[#arg-1]
 val fex = arg[#arg]
 
@@ -6,20 +5,20 @@ if (!fin or !fex) {
 	print("missing filenames")
 	os.exit()
 } else {
-	_G.io.write(string.format("test: %s == %s", fin, fex))
+	io.write(string.format("test: %s => %s", fin, fex))
 }
 
 // read file
-val f = _G.io.open(fin, "r")
+val f = io.open(fin, "r")
 val s = f->read("*a")
 f->close()
 
 // load daul
-val outs = _G.require("out.s")
-val daul = _G.require("in.daul")
-val err = _G.require("out.error")
-val pass = _G.require("pass.daul")
-val lua = _G.require("out.lua")
+val outs = require("out.s")
+val daul = require("in.daul")
+val err = require("out.error")
+val pass = require("pass.daul")
+val lua = require("out.lua")
 
 // compile
 val reporter = err.reporter(s)
@@ -28,7 +27,7 @@ e = pass(e, reporter)
 val o = lua(e)
 
 // get expected lua result
-val f2 = _G.io.open(fex, "r")
+val f2 = io.open(fex, "r")
 if (o == f2->read("*a")) {
 	print(" SUCCESS.")
 } else {

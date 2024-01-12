@@ -41,7 +41,8 @@ local base = {
 	assign = binop,
 	block = all, ["function"] = fun, call = all,
 	["local"] = all3, ["const"] = unop,
-	["while"] = binop, ["for"] = fori, ["forin"] = binop,
+	["if"] = all,
+	["while"] = binop, ["for"] = fori, ["forin"] = all3,
 	["idx"] = binop, ["dotidx"] = unop,
 	["table"] = all, ["tableindex"] = binop
 }
@@ -59,7 +60,13 @@ return function(tbl)
 	local recurse, state
 	recurse = function(ir, i)
 		local c = ir[i]
-		if not c then error("attempt to recurse into nonexistent node") end
+		if not c then
+			error("attempt to recurse into nonexistent node")
+		end
+		if type(c[1]) ~= "string" then
+			error("attempt to recurse into non-node table (t: "..type(c[1])..")")
+		end
+
 		local f = tbl[c[1]]
 
 		if tbl.all then

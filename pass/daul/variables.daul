@@ -3,7 +3,10 @@
 val err = require("out.error")
 val traverse = require("pass.traverse")
 
-val find = \scopes, name -> {
+val find = \globals, scopes, name -> {
+	if (globals[name])
+		return "global"
+
 	for (i=#scopes,1,-1)
 		if (scopes[i][name])
 			return scopes[i][name]
@@ -11,19 +14,45 @@ val find = \scopes, name -> {
 	false
 };
 
-\ir, reporter -> traverse([
+\ir, globals, reporter -> traverse([
 	"init": \[
+		"globals": globals,
 		"reporter": reporter,
 		"scopes": [[]]
 	],
 
 	"function": \ir, recurse, edit, state -> {
 		val scope = []
-		state.scopes[#state.scopes+1] = scope;
+		state.scopes[#state.scopes+1] = scope
 		for (k,v : pairs(ir[2]))
-			scope[v] = true;
+			scope[v] = true
 
-		recurse(ir, 3);
+		recurse(ir, 3)
+
+		state.scopes[#state.scopes] = nil;
+	},
+
+	"for": \ir, recurse, edit, state -> {
+		recurse(ir, 3)
+		recurse(ir, 4)
+		if (ir[5]) recurse(ir, 5)
+
+		state.scopes[#state.scopes+1] = [ir[2][3]: true];
+
+		recurse(ir, 6)
+
+		state.scopes[#state.scopes] = nil;
+	},
+
+	"forin": \ir, recurse, edit, state -> {
+		recurse(ir, 3)
+
+		val scope = []
+		state.scopes[#state.scopes+1] = scope
+		for (k,v : pairs(ir[2]))
+			scope[v[3]] = true
+
+		recurse(ir, 4)
 
 		state.scopes[#state.scopes] = nil;
 	},
@@ -48,7 +77,7 @@ val find = \scopes, name -> {
 	"name": \ir, recurse, edit, state -> {
 		if (ir[2] != "_G") {
 			val name = ir[2]
-			if (!find(state.scopes, name))
+			if (!find(state.globals, state.scopes, name))
 				state.reporter(ir[0][0], ir[0][1], nil, "Variable '", name, "' does not exist")
 		};
 	},
@@ -60,11 +89,14 @@ val find = \scopes, name -> {
 		if (ir[2][1] == "name") {
 			val tok = ir[2][0]
 			val name = ir[2][2]
-			val v = find(state.scopes, name)
+			val v = find(state.globals, state.scopes, name)
 
 			// TODO: highlight assignment
 			if (!v)
 				state.reporter(tok[0], tok[1], nil, "Variable '", name, "' does not exist")
+
+			if (v == "global")
+				state.reporter(tok[0], tok[1], nil, "Variable '", name, "' is a global (assumed constant)")
 
 			if (v == "const") 
 				state.reporter(tok[0], tok[1], nil, "Variable '", name, "' was declared as constant (val)")

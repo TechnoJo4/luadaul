@@ -30,6 +30,10 @@ return function(parser)
 	pre["str"] = literal
 	pre["name"] = literal
 
+	pre["nil"] = literal
+	pre["true"] = literal
+	pre["false"] = literal
+
 	pre["_G"] = function(tok)
 		go(1)
 		return { [0] = tok, "name", "_G" }

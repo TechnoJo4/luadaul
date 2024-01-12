@@ -1,12 +1,15 @@
 // combination of all daul IR passes, processing daul's IR into a state
 // appropriate for final output to lua source code
 
-val variables = _G.require("pass.daul.variables")
-val stmtexpr = _G.require("pass.daul.stmtexpr")
-val blockiife = _G.require("pass.daul.blockiife")
+val variables = require("pass.daul.variables")
+val stmtexpr = require("pass.daul.stmtexpr")
+val blockiife = require("pass.daul.blockiife")
+
+// TODO: move this to a config file of some kind
+val globals = ["print": true, "os": true, "io": true, "math": true, "string": true, "require": true, "arg": true, "pairs": true]
 
 \ir, reporter -> {
-	ir = variables(ir, reporter)
+	ir = variables(ir, globals, reporter)
 	ir = stmtexpr(ir)
 	ir = blockiife(ir)
 }

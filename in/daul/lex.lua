@@ -70,13 +70,14 @@ return function(str, err)
 			or keyword("def") or keyword("return")
 			or keyword("if") or keyword("else")
 			or keyword("while") or keyword("for")
-			or keyword("_G")
+			or keyword("true") or keyword("false")
+			or keyword("nil") or keyword("_G")
 			or pattern("name", "^([a-zA-Z][_a-zA-Z0-9]*)()")
 			or pattern("int", "^([0-9]+)()")
 			or pattern("str", "^\"()", function(s, np)
 					repeat
 						np = string.match(s, "\"()", np)
-					until string.sub(s, np-1, np-1) ~= "\\" or not np
+					until string.sub(s, np-2, np-2) ~= "\\" or not np
 
 					if not np then
 					end
