@@ -9,5 +9,7 @@ return {
 	["if"] = true,
 	["while"] = true,
 	["for"] = true,
-	["forin"] = true
+	["forin"] = true,
+	["break"] = true,
+	["continue"] = true
 }

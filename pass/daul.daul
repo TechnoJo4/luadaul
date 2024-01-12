@@ -6,7 +6,44 @@ val stmtexpr = require("pass.daul.stmtexpr")
 val blockiife = require("pass.daul.blockiife")
 
 // TODO: move this to a config file of some kind
-val globals = ["print": true, "os": true, "io": true, "math": true, "string": true, "require": true, "arg": true, "pairs": true]
+val globals = [
+	"arg": true, 
+	"assert": true,
+	"collectgarbage": true,
+	"coroutine": true,
+	"debug": true,
+	"dofile": true,
+	"error": true,
+	"getfenv": true,
+	"getmetatable": true,
+	"io": true,
+	"ipairs": true,
+	"load": true,
+	"loadfile": true,
+	"loadstring": true,
+	"math": true,
+	"module": true,
+	"next": true,
+	"os": true,
+	"package": true,
+	"pairs": true,
+	"pcall": true,
+	"print": true,
+	"rawequal": true,
+	"rawget": true,
+	"rawset": true,
+	"require": true,
+	"select": true,
+	"setfenv": true,
+	"setmetatable": true,
+	"string": true,
+	"table": true,
+	"tonumber": true,
+	"tostring": true,
+	"type": true,
+	"unpack": true,
+	"xpcall": true
+]
 
 \ir, reporter -> {
 	ir = variables(ir, globals, reporter)

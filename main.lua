@@ -1,6 +1,12 @@
 -- minimal main.lua for bootstrapping purposes
 -- assumes last two arguments are source and target, ignores everything else
 
+local inluvi, luvi = pcall(require, "luvi")
+if inluvi then
+	luvi.bundle.register("loader", "luviloader.lua")
+	require("loader")
+end
+
 local argv = arg or {...}
 local l = #argv
 local fin = argv[l-1]

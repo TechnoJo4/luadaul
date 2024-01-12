@@ -56,6 +56,16 @@ return function(parser)
 		return { [0] = tok, "return", right }
 	end
 
+	pre["break"] = function(tok)
+		go(1)
+		return { [0] = tok, "break" }
+	end
+
+	pre["continue"] = function(tok)
+		go(1)
+		return { [0] = tok, "continue" }
+	end
+
 	pre["("] = function(p0) -- )
 		go(1)
 		local e = parser.expr()

@@ -1,0 +1,17 @@
+val luvi = require("luvi")
+
+package.loaders[#package.loaders+1] = \name -> {
+	var caller = nil
+	for (level=2,16) {
+		caller = assert(debug.getinfo(level, "S").source)
+		if (caller != "=[C]") break;
+	}
+
+	if (caller->sub(1, #("bundle:")) == "bundle:") {
+		val newname = name->gsub("%.", "/") .. ".lua"
+		val contents = luvi.bundle.readfile(newname)
+		if (contents) {
+			return loadstring(contents, "bundle:"..newname)
+		};
+	};
+};

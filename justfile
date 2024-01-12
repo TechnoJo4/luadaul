@@ -1,31 +1,29 @@
 set windows-shell := ["pwsh", "-NoProfile", "-Command"]
 
-cflags := "-Wall -O3"
-winlibs := "/DEFAULTLIB:libcmt.lib /DEFAULTLIB:libvcruntime.lib /DEFAULTLIB:libucrt.lib"
-objfiles := "build/vm/vm.o build/vm/main.o"
-
-all: build test
-
-build: builddir (d "pass/daul/variables") (d "pass/daul")
-
-test: (d "test") (testd "pass/daul" "build/pass/daul") (testd "pass/daul/variables" "build/pass/daul/variables")
-
-vm: (c "vm/main")
-	lld-link /OUT:build/vm.exe /SUBSYSTEM:CONSOLE {{objfiles}} {{winlibs}}
-
-c file:
-	clang {{cflags}} -MD -o build/{{file}}.o -c {{file}}.c
-
-d file:
-	cd build; luajit ./main.lua ../{{file}}.daul {{file}}.lua
-
-testd in out:
-	cd build; luajit ./test.lua ../{{in}}.daul ../{{out}}.lua
+all: luvibundle test
 
 [windows]
-builddir:
+luvibundle: build (d "luviloader")
+	luvi dist -o build/daul.exe
+
+build: dirs (d "pass/daul/variables") (d "pass/daul")
+
+test: selfcheck
+
+selfcheck: (testd "pass/daul" "dist/pass/daul") (testd "pass/daul/variables" "dist/pass/daul/variables")
+
+testd in out: (d "test")
+	cd dist; luajit ./test.lua ../{{in}}.daul ../{{out}}.lua
+
+d file:
+	cd dist; luajit ./main.lua ../{{file}}.daul {{file}}.lua
+
+[windows]
+dirs:
 	#!pwsh -NoProfile
+	Remove-Item dist -Recurse -ErrorAction Ignore
+	mkdir dist | Out-Null
+	Get-ChildItem -Exclude dist -Directory . | % { Copy-Item -Recurse -Filter *.lua $_ dist/ }
+	Copy-Item main.lua dist/
 	Remove-Item build -Recurse -ErrorAction Ignore
 	mkdir build | Out-Null
-	Get-ChildItem -Exclude build -Directory . | % { Copy-Item -Recurse -Filter *.lua $_ build/ }
-	Copy-Item main.lua build/

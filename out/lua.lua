@@ -184,6 +184,16 @@ local function r(t, i, n)
 		return i
 	end
 
+	if nt == "break" then
+		t[i] = "break"
+		return i + 1
+	end
+
+	if nt == "continue" then
+		t[i] = "continue"
+		return i + 1
+	end
+
 	if nt == "const" then
 		return r(t, i, n[2])
 	end

@@ -1,4 +1,5 @@
 /deps
+/dist
 /build
 _*
 
