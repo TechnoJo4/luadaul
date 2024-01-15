@@ -195,6 +195,7 @@ return function(parser)
 	post["-"] = leftrec("sub", p.add)
 	post["*"] = leftrec("mul", p.mult)
 	post["/"] = leftrec("div", p.mult)
+	post["%"] = leftrec("mod", p.mult)
 	post["^"] = rightrec("pow", p.power)
 
 	post[".."] = rightrec("cat", p.concat)

@@ -7,7 +7,7 @@ allowed IR elements:
 		int str name
 	
 	binops: (f a b) where f is one of
-		add sub mul div
+		add sub mul div mod pow
 		assign
 
 	call: (call f ...params)
@@ -30,9 +30,9 @@ local literal = {
 }
 
 local binops = {
-	["add"] = "+", ["sub"] = "-", ["mul"] = "*", ["div"] = "/", ["cat"] = "..",
+	["add"] = "+", ["sub"] = "-", ["mul"] = "*", ["div"] = "/", ["mod"] = "%", ["pow"] = "^",
 	["lt"] = "<", ["gt"] = ">", ["le"] = "<=", ["ge"] = ">=", ["eq"] = "==", ["ne"] = "~=",
-	["or"] = " or ", ["and"] = " and "
+	["cat"] = "..", ["or"] = " or ", ["and"] = " and "
 }
 
 local function r(t, i, n)

@@ -4,6 +4,8 @@
 
 local stmts = require("pass.daul.stmts")
 
+local novar = {["return"]=true,["break"]=true,["continue"]=true}
+
 return require("pass.traverse") {
 	init = function()
 		local counter = -1
@@ -149,12 +151,48 @@ return require("pass.traverse") {
 		recurse(ir, 3)
 
 		-- see comment in @block: we can now assume the last value of the body
-		-- is an expression (and so valid as an assign's rhs)
-		local name = gen()
+		-- is an expression (and so valid as an assign's rhs), unless in novar
 		local body = ir[3]
-		body[#body] = { "assign", { "name", name }, body[#body] }
-		body[#body+1] = { "name", name }
+		if not novar[body[#body][1]] then
+			local name = gen()
+			body[#body] = { "assign", { "name", name }, body[#body] }
+			body[#body+1] = { "name", name }
 
-		edit{ "block", { "local", { name } }, ir, { "name", name } }
-	end
+			edit{ "block", { "local", { name } }, ir, { "name", name } }
+		end
+	end,
+
+	["if"] = function(ir, recurse, edit, gen)
+		recurse(ir, 2)
+		recurse(ir, 3)
+		if ir[4] then
+			recurse(ir, 4)
+		end
+
+		-- see comment in @block: we can now assume the last value of both bodies
+		-- are expressions (and so valid as an assign's rhs), unless in novar
+		local name -- will be generated if needed
+
+		-- true branch
+		local body = ir[3]
+		if not novar[body[#body][1]] then
+			name = name or gen()
+			body[#body] = { "assign", { "name", name }, body[#body] }
+			body[#body+1] = { "name", name }
+		end
+
+		-- false branch
+		if ir[4] then
+			body = ir[4]
+			if not novar[body[#body][1]] then
+				name = name or gen()
+				body[#body] = { "assign", { "name", name }, body[#body] }
+				body[#body+1] = { "name", name }
+			end
+		end
+
+		if name then
+			edit{ "block", { "local", { name } }, ir, { "name", name } }
+		end
+	end,
 }

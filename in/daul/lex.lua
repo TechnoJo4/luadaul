@@ -63,7 +63,8 @@ return function(str, err)
 			or char("<") or char(">")
 			or char("+") or char("-")
 			or char("*") or char("/")
-			or char("^") or char("#") or char("!")
+			or char("%") or char("^")
+			or char("#") or char("!")
 			or char(";") or char(",") or char(":")
 			or keyword("and") or keyword("or")
 			or keyword("var") or keyword("val")
@@ -76,11 +77,18 @@ return function(str, err)
 			or pattern("name", "^([a-zA-Z][_a-zA-Z0-9]*)()")
 			or pattern("int", "^([0-9]+)()")
 			or pattern("str", "^\"()", function(s, np)
-					repeat
-						np = string.match(s, "\"()", np)
-					until string.sub(s, np-2, np-2) ~= "\\" or not np
-
-					if not np then
+					local e
+					for i=np,#s do
+						if e then
+							e = false
+						else
+							local c = string.sub(s, i, i)
+							if c == "\"" then
+								np = i+1
+								break
+							end
+							e = "\\" == c
+						end
 					end
 
 					return string.sub(s, p, np-1), np

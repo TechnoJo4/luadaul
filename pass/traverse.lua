@@ -36,7 +36,7 @@ end
 local base = {
 	unm = unop, len = unop, ["not"] = unop,
 	["or"] = binop, ["and"] = binop, cat = binop,
-	add = binop, sub = binop, mul = binop, div = binop, pow = binop,
+	add = binop, sub = binop, mul = binop, mod = binop, div = binop, pow = binop,
 	lt = binop, gt = binop, le = binop, ge = binop, eq = binop, ne = binop,
 	assign = binop,
 	block = all, ["function"] = fun, call = all,
