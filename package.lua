@@ -1,5 +1,5 @@
 return {
-  name = "luadaul",
+  name = "daul",
   version = "0.2.0",
   homepage = "https://github.com/TechnoJo4/luadaul",
   description = "",
@@ -8,6 +8,6 @@ return {
   author = { name = "TechnoJo4", email = "technojo4@gmail.com" },
   dependencies = {},
   files = {
-    "dist/**.lua"
+    "**.lua"
   }
 }

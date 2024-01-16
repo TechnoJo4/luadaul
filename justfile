@@ -1,10 +1,16 @@
 set windows-shell := ["pwsh", "-NoProfile", "-Command"]
 
-all: luvibundle test
+all: litbundle test
 
 [windows]
 luvibundle: build (d "luviloader")
 	luvi dist -o build/daul.exe
+
+[windows]
+litbundle: build (d "luviloader")
+	cp package.lua dist/
+	lit make dist
+	mv daul.exe build/
 
 build: dirs (d "pass/daul/variables") (d "pass/daul")
 
