@@ -1,25 +1,25 @@
-val A=\m->\x->assert(x,m)val Al=A("length")val At=A("type")val Ap=A("parse")
-val t=type;val T=\x->t(x)=="table"val nyi=\(error("nyi"))
-val l=\f,x,y->{val t=[]for(i=1,#x)t[i]=f(x[i],y)t}val r=\f,x,y->{val t=[]for(i=1,#y)t[i]=f(x,y[i])t}
-var m=nil;m=\f->\x->{if(T(x))l(m(f),x)else f(x)}val c=\x,y->{val t=[]for(i=1,x)t[i]=y[i]t}
-val e=\x->T(x)and x or[x];val E=\f->\x,y->{if(T(y))
- if(T(x)){Al(#x==#y)val t=[]for(i=1,#x)t[i]=f(x[i],y[i])t}else r(f,x,y)
- else if(T(x))l(f,x,y)else f(x,y)}
-val B=["#":\x,y->{At(!T(x))if(T(y)){Al(x<#y)c(x,y)}else{val t=[]for(i=1,x)t[i]=y;t}},
+val A=\m->\x->assert(x,m)val Al=A("len")val At=A("type")val T=\x->type(x)=="table"
+val d=\a,f->{val t=[]for(i=1,#a)t[i]=f(i,a[i])t}val c=\x,y->{val t=[]for(i=1,x)t[i]=y[i]t}
+val l=\f,x,y->{At(T(x))d(x,\i->f(x[i],y))}val m=\f->\x->if(T(x))l(m(f),x)else f(x)
+val r=\f,x,y->{At(T(y))d(y,\i->f(x,y[i]))}val e=\x->T(x)and x or[x]val b=\x->x and 1 or 0
+val E=\f,F->\x,y->{[0:\(f(x,y)),l,r,\F->{Al(#x==#y)d(x,\i->F(x[i],y[i]))}][b(T(x))+2*b(T(y))]
+ (F and E(f,F)or f,x,y)}val F=\f->E(f,true)val nyi=\(error("nyi"))val env=[]val Ae=A("env")
+val S=\x->{if(T(x))("("..table.concat(l(S,x),";")..")")else tostring(x)}val v=["~":m(\x->b(x==0)),
+ "!":\x->{At(!T(x))val t=[]for(i=1,x)t[i]=i;t},"@":\x->b(T(x)),"(":\x->x,",":\x->[x],
+ "-":m(\x->-x),"%":m(math.sqrt),"_":m(math.floor),"*":\x->if(T(x))x.1 else x,"#":\x->{At(T(x))#x}]
+val V=["#":\x,y->{At(!T(x))if(T(y)){Al(x<#y)c(x,y)}else{val t=[]for(i=1,x)t[i]=y;t}},
  "@":\x,y->{At(T(x))r(\t,i->t[i],x,e(y))},",":\x,y->{x=e(x)y=e(y)x=c(#x,x)for(i=1,#y)x[#x+1]=y[i]x},
- "+":E(\x,y->x+y),"-":E(\x,y->x-y),"*":E(\x,y->x*y),"%":E(\x,y->x/y),"!":E(\x,y->y%x)]
-val b=["#":\x->{At(T(x))#x},"!":\x->{At(!T(x))val t=[]for(i=1,x)t[i]=i;t},"@":\x->(T(x)and 1 or 0),
- "(":\x->x,",":\x->[x],"-":m(\x->-x),"%":m(math.sqrt),"_":m(math.floor)]
-val M=["'":\f,x,y->E(f)(x,y),"/":\f,x,y->{for(i=1,#y)x=f(x,y[i])x},"\\":\f,x,y->l(\v->x=f(x,v),y),
+ "+":F(\x,y->x+y),"-":F(\x,y->x-y),"*":F(\x,y->x*y),"%":F(\x,y->x/y),"!":F(\x,y->y%x)]
+val M=["'":\f,x,y->E(f)(x,y),"/":\f,x,y->{for(i=1,#y)x=f(x,y[i])x},"\\":\f,x,y->l(\z->x=f(x,z),y),
  "':":\f,x,y->{val t=[]for(i=1,#y){t[i]=f(x,y[i])x=y[i]}t},"/:":r,"\\:":l]
-var S=nil;S=\x->{if(T(x))("("..table.concat(l(S,x),";")..")")else tostring(x)}
-val n=\s->{val C=s[1]->sub(s[2],s[2])s[2]=1+s[2]C}val N=\s->{s[1]->sub(s[2],s[2])}
-var p=nil;p=\s->{var v=nil;var C=n(s)v=if(b[C])b[C](p(s))else tonumber(C)
- Ap(v)if(s[2]<#s[1]){C=n(s)if(C!=")"){val f=B[C]Ap(f)v=if(!M[N(s)])f(v,p(s))else
-  M[n(s)..(N(s)==":"and n(s)or"")](f,v,p(s))}}v}
+val N=\s->s.1->sub(s.2,s.2)val n=\s->{val C=N(s)s.2=1+s.2;C}val Ap=A("parse")val Db=\x->{print(x)x}
+val P=\s,m,f->{m=[s.1->match("^("..m..")()",s.2)]if(m.1){s.2=m.2;(f or \x->x)(m.1)}}
+val p=\s->{val i=P(s,"[a-z]+")val I=P(s,":")var x=v[N(s)]if(i and!I)x=Ae(env[i])else
+ x=if(x){n(s)x(p(s))}else P(s,"%d+",tonumber);if(s.2<#s.1){val C=n(s)if(C!=")"){val f=Ap(V[C])
+ x=if(!M[N(s)])f(x,p(s))else M[P(s,".:?")](f,x,p(s))}}if(i and I){env[i]=x}x}
 
 while(true){io.write(" ")print(S(p([io.read("*l"),1])))}
 
-// -n negate %n sqrt _n floor #v len !n til @x type ,x enlist
+// -n negate %n sqrt _n floor #v len !n til @x type ~x not ,x enlist
 // x+y add x-y sub x*y mul x%y div x!y mod n#x take v@n at x,y concat
 // xF'y each xF/y fold xF\y scan xF':y eachprior xF\:y eachleft xF/:y eachright

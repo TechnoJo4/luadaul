@@ -159,9 +159,12 @@ return function(parser)
 	post["."] = {
 		prec = p.primary,
 		func = function(tok, left)
-			local name = parser.tokens[go(1)]
-			expect(name, "name", "an identifier")
-			return { [0] = tok, "dotidx", left, { [0] = name, "name", name[3] } }
+			local right = parser.tokens[go(1)]
+			if right[2] == "int" then
+				return { [0] = tok, "idx", left, { [0] = right, "int", right[3] } }
+			end
+			expect(right, "name", "an identifier")
+			return { [0] = tok, "dotidx", left, { [0] = right, "name", right[3] } }
 		end
 	}
 

@@ -70,8 +70,17 @@ val find = \globals, scopes, name -> {
 	},
 
 	"local": \ir, recurse, edit, state -> {
-		for (i=3,#ir) recurse(ir, i);
-		state.scopes[#state.scopes][ir[2][1]] = true
+		// special path for functions to allow recursion without the "var x=nil;x=" hack
+		if (#ir == 3 and ir[3][1] == "function") {
+			state.scopes[#state.scopes][ir[2][1]] = true
+			recurse(ir, 3)
+			edit(["block",
+				["local", ir[2]],
+				["assign", ["name", ir[2][1]], ir[3]]])
+		} else {
+			for (i=3,#ir) recurse(ir, i);
+			state.scopes[#state.scopes][ir[2][1]] = true
+		};
 	},
 
 	"name": \ir, recurse, edit, state -> {
