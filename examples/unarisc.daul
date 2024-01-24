@@ -1,0 +1,93 @@
+// equivalent lua
+val regs = "r1,r2,r3,r4,r5"
+val instrs = [
+	"push": "$1 = $1 + 1;",
+	"pop": "$1 = math.max(0, $1 - 1);",
+	"goto": "return \"$1\",{"..regs.."};",
+	"empty": "if $1 == 0 then return \"$2\",{"..regs.."} end;",
+	"concat": "$1 = $1 + $2;",
+	"ret": "return nil, $1;"
+]
+
+// read file
+val a = arg or _G.args
+val fn = a[1]
+if (!fn) {
+	print("missing filename\n"
+		.."usage: "..a[0].." code.txt r1 r2 r3 r4 r5\n"
+		.."   ex. "..a[0].." max.txt 2 500")
+	os.exit()
+}
+
+val f = io.open(fn, "r")
+val s = f->read("*a")
+f->close()
+
+// parse
+var i = 1
+val P = \p -> {
+	val m = [string.match(s, "^"..p.."()", i)]
+	if (m.1) i = m.2
+	m.1
+}
+val S = \{
+	while (P("([ \t\r\n]+)")) P("([;/].-\n)")
+}
+
+val chunks = ["":""]
+var doing = [""]
+while (i < #s) {
+	S()
+	while (true) {
+		val label = P("([a-z0-9]-):")
+		if (!label) break
+		if (chunks[label]) error("already defined "..label)
+		chunks[label] = ""
+		doing[#doing+1] = label
+		S();
+	}
+
+	if (#doing == 0) error("unreachable code (unlabeled instruction after ret or goto)")
+
+	val instr = P("([a-z]+)")
+	if (!instr) error("parse error")
+	if (!instrs[instr]) error("unknown instruction "..instr)
+	S()
+	val opts = []
+	while (true) {
+		val arg = P("([a-z0-9]+)")
+		if (!arg) error("invalid arg to "..instr)
+		opts[#opts+1] = arg
+		S()
+		if(P("(,)")) S() else break;
+	}
+
+	val code = string.gsub(instrs[instr], "%$(%d+)", \n -> {
+		val opt = opts[tonumber(n)]
+		if (!opt) error("need more than "..n.." arguments to "..instr..", got "..#opts)
+		opt
+	})
+	for (k_,k : pairs(doing)) chunks[k] = chunks[k] .. code
+	if (instr == "goto" or instr == "ret") doing = [];;
+}
+
+// compile generated lua
+for (k,v : pairs(chunks)) {
+	chunks[k] = assert(assert(loadstring("return(function("..regs..")"..v.."end)"))());
+}
+
+// run
+var label = ""
+var regs = [0,0,0,0,0]
+for (i=1,5) if (a[i+1]) regs[i] = assert(tonumber(a[i+1]))
+while (true) {
+	val res = [chunks[label](unpack(regs))]
+	if (!res.1) {
+		print("ret:", res.2)
+		break
+	}
+
+	label = res.1
+	regs = res.2
+	print("->", label);
+}
