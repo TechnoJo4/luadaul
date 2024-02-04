@@ -57,7 +57,7 @@ return {
 		return function(first, last, highlight, ...)
 			-- find line; TODO binsearch
 			local i = 1
-			while nls[i+1] < first do
+			while nls[i+1] <= first do
 				i = i + 1
 			end
 
